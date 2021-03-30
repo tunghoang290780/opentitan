@@ -6,6 +6,9 @@ class i2c_agent_cfg extends dv_base_agent_cfg;
 
   bit en_monitor = 1'b1; // enable monitor
 
+  // num of trans. sent by Host agent to Target dut, configured by test
+  uint num_trans;
+
   i2c_target_addr_mode_e target_addr_mode = Addr7BitMode;
 
   timing_cfg_t    timing_cfg;

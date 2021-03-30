@@ -12,7 +12,7 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
   virtual task body();
     bit do_interrupt = 1'b0;
     initialization(.mode(Host));
-    `uvm_info(`gfn, "\n--> start of sequence", UVM_DEBUG)
+    `uvm_info(`gfn, "\n--> Dut/Agent = Host/Target: start of sequence", UVM_DEBUG)
     fork
       begin
         while (!cfg.under_reset && do_interrupt) process_interrupts();
@@ -22,8 +22,21 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
         do_interrupt = 1'b0; // gracefully stop process_interrupts
       end
     join
-    `uvm_info(`gfn, "\n--> end of sequence", UVM_DEBUG)
+    `uvm_info(`gfn, "\n--> Dut/Agent = Host/Target: end of sequence", UVM_DEBUG)
+
+
+    // Dut/Agent switches to Target/Host mode,
+    wait_host_for_idle();
+    initialization(.mode(Device));
+    `uvm_info(`gfn, "\n--> Dut/Agent = Host/Target: start of sequence", UVM_DEBUG)
+    program_agent_registers();
+
   endtask : body
+
+  // TODO: need to support re-programming agent registers
+  virtual task program_agent_registers();
+    program_registers();
+  endtask : program_agent_registers
 
   virtual task host_send_trans(int max_trans = num_trans, tran_type_e trans_type = ReadWrite);
     bit last_tran, chained_read;

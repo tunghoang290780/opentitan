@@ -332,6 +332,7 @@ class i2c_base_vseq extends cip_base_vseq #(
     csr_update(.csr(ral.timeout_ctrl));
     // configure i2c_agent_cfg
     cfg.m_i2c_agent_cfg.timing_cfg = timing_cfg;
+    cfg.m_i2c_agent_cfg.num_trans  = num_trans;
     `uvm_info(`gfn, $sformatf("\n  cfg.m_i2c_agent_cfg.timing_cfg\n%p",
         cfg.m_i2c_agent_cfg.timing_cfg), UVM_DEBUG)
 

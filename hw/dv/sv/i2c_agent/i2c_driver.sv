@@ -37,8 +37,7 @@ class i2c_driver extends dv_base_driver #(i2c_item, i2c_agent_cfg);
             begin
               if (cfg.if_mode == Device) drive_device_item(req);
               else                       drive_host_item(req);
-            end
-            // handle on-the-fly reset
+            end // handle on-the-fly reset
             begin
               process_reset();
               req.clear_all();
@@ -107,7 +106,7 @@ class i2c_driver extends dv_base_driver #(i2c_item, i2c_agent_cfg);
     release_bus();
     `uvm_info(`gfn, "\n  driver is reset", UVM_DEBUG)
   endtask : process_reset
-  
+
   virtual task release_bus();
     cfg.vif.scl_o = 1'b1;
     cfg.vif.sda_o = 1'b1;

@@ -25,12 +25,10 @@ class i2c_base_seq extends dv_base_seq #(
       // get seq for agent running in Device mode
       fork
         forever begin
-          i2c_item  req;
           p_sequencer.req_analysis_fifo.get(req);
           req_q.push_back(req);
         end
         forever begin
-          i2c_item  rsp;
           wait(req_q.size > 0);
           rsp = req_q.pop_front();
           start_item(rsp);
@@ -38,16 +36,18 @@ class i2c_base_seq extends dv_base_seq #(
         end
       join
     end else begin
-      // get seq for agent running in Host mode
-      req = i2c_item::type_id::create("req");
-      start_item(req);
-      `DV_CHECK_RANDOMIZE_WITH_FATAL(req,
-                                     data_q.size() == local::data_q.size();
-                                     foreach (data_q[i]) {
-                                       data_q[i] == local::data_q[i];
-                                     })
-      finish_item(req);
-      get_response(rsp);
+      for (int i = 0; i < cfg.num_trans; i++) begin
+        // get seq for agent running in Host mode
+        req = i2c_item::type_id::create("req");
+        start_item(req);
+        `DV_CHECK_RANDOMIZE_WITH_FATAL(req,
+                                       data_q.size() == local::data_q.size();
+                                       foreach (data_q[i]) {
+                                         data_q[i] == local::data_q[i];
+                                       })
+        finish_item(req);
+        get_response(rsp);
+      end
     end
   endtask : body
 

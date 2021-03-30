@@ -194,4 +194,55 @@ interface i2c_if;
     end
   endtask: get_bit_data
 
+  //----------------------------------------------------------
+  // TODO: tasks support agent operating in Host mode
+  //----------------------------------------------------------
+  task automatic host_control_bus(ref       timing_cfg_t tc,
+                                  input     drv_type_e drv_type,
+                                  input bit bit_i);
+    case (drv_type)
+      HostStart: begin
+        sda_o = 1'b1;
+        scl_o = 1'b1;
+        wait_for_dly(tc.tHoldStart);
+        scl_o = 1'b0;
+      end
+      HostAckOrNotAck: begin
+        // bit_i = 0/1: Ack/NotAck
+        sda_o = 1'b0;
+        scl_o = 1'b0;
+        wait_for_dly(tc.tSetupBit);
+        sda_o = bit_i;
+        wait_for_dly(tc.tClockPulse);
+        scl_o = 1'b1;
+        wait_for_dly(tc.tHoldBit);
+        scl_o = 1'b0;
+      end
+      HostStopOrRStart: begin
+        // bit_i = 0/1: RStart/Stop
+        sda_o = 1'b0;
+        scl_o = 1'b0;
+        wait_for_dly(tc.tClockStop);
+        scl_o = 1'b1;
+        wait_for_dly(tc.tSetupStop);
+        sda_o = bit_i;
+        if (bit_i) begin
+          wait_for_dly(tc.tHoldStop);
+        end
+      end
+      HostData: begin
+        // also use for address bits and r/w bit
+        scl_o = 1'b0;
+        sda_o = 1'b0;
+        wait_for_dly(tc.tClockLow);
+        sda_o = bit_i;
+        wait_for_dly(tc.tSetupBit);
+        scl_o = 1'b1;
+        wait_for_dly(tc.tClockPulse);
+        scl_o = 1'b1;
+        wait_for_dly(tc.tHoldBit);
+      end
+    endcase
+  endtask : host_control_bus
+
 endinterface : i2c_if
