@@ -29,6 +29,7 @@ class i2c_monitor extends dv_base_monitor #(
     @(negedge cfg.vif.rst_ni);
     num_dut_tran = 0;
     mon_dut_item.clear_all();
+    mon_dut_item.clear_all();
 
   endtask : wait_for_reset_and_drop_item
 

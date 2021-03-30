@@ -11,32 +11,64 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
 
   virtual task body();
     bit do_interrupt = 1'b0;
-    initialization(.mode(Host));
-    `uvm_info(`gfn, "\n--> Dut/Agent = Host/Target: start of sequence", UVM_DEBUG)
-    fork
-      begin
-        while (!cfg.under_reset && do_interrupt) process_interrupts();
-      end
-      begin
-        host_send_trans(num_trans);
-        do_interrupt = 1'b0; // gracefully stop process_interrupts
-      end
-    join
-    `uvm_info(`gfn, "\n--> Dut/Agent = Host/Target: end of sequence", UVM_DEBUG)
+    if_mode_e host_mode = Device;
 
-
-    // Dut/Agent switches to Target/Host mode,
-    wait_host_for_idle();
-    initialization(.mode(Device));
-    `uvm_info(`gfn, "\n--> Dut/Agent = Host/Target: start of sequence", UVM_DEBUG)
-    program_agent_registers();
-
+    if (host_mode == Host) begin
+      //---------------------------------------
+      // Dut = Host, Agent = Device
+      //---------------------------------------
+      `uvm_info(`gfn, "\n\n--> Dut = Host, Agent = Device: start of sequence", UVM_LOW)
+      initialization(.mode(Host));
+      fork
+        begin
+          while (!cfg.under_reset && do_interrupt) process_interrupts();
+        end
+        begin
+          host_send_trans(num_trans);
+          do_interrupt = 1'b0; // gracefully stop process_interrupts
+        end
+      join
+      `uvm_info(`gfn, "\n--> Dut = Host, Agent = Device: end of sequence\n", UVM_LOW)
+    end else begin
+      //---------------------------------------
+      // TODO: Dut = Target/Device, Agent = Host
+      //---------------------------------------
+      wait_host_for_idle();
+      `uvm_info(`gfn, "\n\n--> Dut = Target, Agent = Host: start of sequence", UVM_LOW)
+      // TODO: temporal disable for debug
+      cfg.en_scb = 1'b0;
+      cfg.m_i2c_agent_cfg.en_monitor = cfg.en_scb;
+      initialization(.mode(Device));
+      target_send_trans();
+      `uvm_info(`gfn, "\n--> Dut = Target, Agent = Host: end of sequence\n", UVM_LOW)
+    end
   endtask : body
 
   // TODO: need to support re-programming agent registers
-  virtual task program_agent_registers();
-    program_registers();
-  endtask : program_agent_registers
+  virtual task target_send_trans();
+    i2c_base_seq m_i2c_base_seq;
+    bus_op_e bus_op = BusOpWrite;
+
+    `uvm_info(`gfn, "\n  start prog_i2c_regs", UVM_LOW)
+    prog_agent_regs();
+    prog_i2c_regs(.mode(Device));
+    if (bus_op == BusOpRead) begin
+      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(num_rd_bytes)
+    end else begin
+      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(num_wr_bytes)
+      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(data_q)
+      `uvm_create_on(m_i2c_base_seq, p_sequencer.i2c_sequencer_h)
+      `DV_CHECK_RANDOMIZE_WITH_FATAL(m_i2c_base_seq,
+                                       data_q.size() == num_wr_bytes;
+                                       bus_op == bus_op;
+                                       foreach (data_q[i]) {data_q[i] == data_q[i];}
+                                       start_flag == 1'b1;
+                                       stop_flag == 1'b1;
+                                    )
+      `uvm_send(m_i2c_base_seq)
+    end
+    `uvm_info(`gfn, "\n  finish prog_i2c_regs", UVM_LOW)
+  endtask : target_send_trans
 
   virtual task host_send_trans(int max_trans = num_trans, tran_type_e trans_type = ReadWrite);
     bit last_tran, chained_read;
@@ -61,8 +93,8 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
             // otherwise, rw_bit is randomized
             rw_bit = (trans_type  == WriteOnly) ? 1'b0 :
                      ((trans_type == ReadOnly)  ? 1'b1 : rw_bit);
-            get_timing_values();
-            program_registers();
+            prog_agent_regs();
+            prog_i2c_regs(.mode(Host));
           end
 
           // if trans_type is provided, then rw_bit is overridden
@@ -76,7 +108,7 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
           if ((cur_tran == 1'b1) ||    // first read transaction
               (!fmt_item.read)   ||    // write transactions
               (!chained_read)) begin   // non-chained read transactions
-            program_address_to_target();
+            i2c_host_prog_addr();
           end
 
           last_tran = (cur_tran == max_trans);
@@ -84,10 +116,10 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
               (rw_bit) ? "READ" : "WRITE", cur_tran, max_trans), UVM_DEBUG)
           if (chained_read) begin
             // keep programming chained read transaction
-            program_control_read_to_target(last_tran);
+            i2c_host_prog_read_bytes(last_tran);
           end else begin
-            if (rw_bit) program_control_read_to_target(last_tran);
-            else        program_write_data_to_target(last_tran);
+            if (rw_bit) i2c_host_prog_read_bytes(last_tran);
+            else        i2c_host_write_data(last_tran);
           end
 
           `uvm_info(`gfn, $sformatf("\n  finish sending %s transaction, %0s at the end, %0d/%0d, ",
@@ -97,21 +129,21 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
           // check a completed transaction is programmed to the host/dut (stop bit must be issued)
           // and check if the host/dut is in idle before allow re-programming the timing registers
           if (fmt_item.stop) begin
-            wait_for_reprogram_registers();
+            wait_for_reprog_i2c_regs();
           end
         end
         complete_program_fmt_fifo = 1'b1;
       end
       begin
-        read_data_from_target();
-        `uvm_info(`gfn, "\n  read_data_from_target task ended", UVM_DEBUG)
+        i2c_host_read_data();
+        `uvm_info(`gfn, "\n  i2c_host_read_data task ended", UVM_DEBUG)
       end
     join
     wait_host_for_idle();
     `uvm_info(`gfn, "\n  host_send_trans task ended", UVM_DEBUG)
   endtask : host_send_trans
 
-  virtual task program_address_to_target();
+  virtual task i2c_host_prog_addr();
     `DV_CHECK_RANDOMIZE_WITH_FATAL(fmt_item,
       start == 1'b1;
       stop  == 1'b0;
@@ -125,10 +157,10 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
     end
     `uvm_info(`gfn, $sformatf("\nprogram, %s address %x",
         fmt_item.fbyte[0] ? "read" : "write", fmt_item.fbyte[7:1]), UVM_DEBUG)
-    program_format_flag(fmt_item, "  program_address_to_target");
-  endtask : program_address_to_target
+    prog_format_flags(fmt_item, "  i2c_host_prog_addr");
+  endtask : i2c_host_prog_addr
 
-  virtual task program_control_read_to_target(bit last_tran);
+  virtual task i2c_host_prog_read_bytes(bit last_tran);
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(num_rd_bytes)
     `DV_CHECK_RANDOMIZE_WITH_FATAL(fmt_item,
       fbyte == num_rd_bytes;
@@ -147,7 +179,7 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
     total_rd_bytes += (num_rd_bytes) ? num_rd_bytes : 256;
     // decrement total_rd_bytes since one data is must be dropped in fifo_overflow test
     if (cfg.seq_cfg.en_rx_overflow) total_rd_bytes--;
-    `uvm_info(`gfn, $sformatf("\n  program_control_read_to_target, read %0d byte",
+    `uvm_info(`gfn, $sformatf("\n  i2c_host_prog_read_bytes, read %0d byte",
         total_rd_bytes), UVM_DEBUG)
 
     if (fmt_item.rcont) begin
@@ -157,11 +189,12 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
           "with STOP, next transaction should begin with START" :
           "without STOP, next transaction should begin with RSTART"), UVM_DEBUG)
     end
-    program_format_flag(fmt_item, "  program number of bytes to read");
-  endtask : program_control_read_to_target
+    prog_format_flags(fmt_item, "  program number of bytes to read");
+  endtask : i2c_host_prog_read_bytes
 
-  virtual task read_data_from_target();
+  virtual task i2c_host_read_data();
     bit rx_smoke, rx_full, rx_overflow, rx_watermark, rx_empty, start_read;
+    bit [7:0] rd_data;
 
     // if not a chained read, read out data sent over rx_fifo
     rx_overflow  = 1'b0;
@@ -193,9 +226,9 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
         cfg.clk_rst_vif.wait_clks(1);
       end
     end
-  endtask : read_data_from_target
+  endtask : i2c_host_read_data
 
-  virtual task program_write_data_to_target(bit last_tran);
+  virtual task i2c_host_write_data(bit last_tran);
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(num_wr_bytes)
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(wr_data)
     if (num_wr_bytes == 256) begin
@@ -221,8 +254,8 @@ class i2c_rx_tx_vseq extends i2c_base_vseq;
             "with STOP, next transaction should begin with START" :
             "without STOP, next transaction should begin with RSTART"), UVM_DEBUG)
       end
-      program_format_flag(fmt_item, "program_write_data_to_target");
+      prog_format_flags(fmt_item, "i2c_host_write_data");
     end
-  endtask : program_write_data_to_target
+  endtask : i2c_host_write_data
 
 endclass : i2c_rx_tx_vseq

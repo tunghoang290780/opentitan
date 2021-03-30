@@ -13,12 +13,15 @@ class i2c_base_seq extends dv_base_seq #(
   // queue monitor requests which ask the re-active driver to response host dut
   i2c_item req_q[$];
 
-  // data to be sent to target dut
-  bit [7:0] data_q[$];
-  // constrain size of data sent/received
-  constraint data_q_size_c {
-    data_q.size() inside {[cfg.i2c_host_min_data_rw : cfg.i2c_host_max_data_rw]};
+  rand bit [7:0] data_q[$];
+  rand bit [7:0] rd_data;
+  rand bit       do_stretch_clk;
+  rand bit       start_flag, stop_flag;
+
+  constraint data_size_c {
+    data_q.size() inside {[1:32]};
   }
+  constraint do_stretch_clk_c { do_stretch_clk dist { 1 :/ 1, 0 :/ 4}; }
 
   virtual task body();
     if (cfg.if_mode == Device) begin
@@ -30,24 +33,29 @@ class i2c_base_seq extends dv_base_seq #(
         end
         forever begin
           wait(req_q.size > 0);
-          rsp = req_q.pop_front();
-          start_item(rsp);
-          finish_item(rsp);
+          req = req_q.pop_front();
+          `DV_CHECK_RANDOMIZE_WITH_FATAL(req,
+                                           do_stretch_clk == local::do_stretch_clk;
+                                           rd_data == local::rd_data;
+                                        )
+          start_item(req);
+          finish_item(req);
+          get_response(rsp);
         end
       join
     end else begin
-      for (int i = 0; i < cfg.num_trans; i++) begin
-        // get seq for agent running in Host mode
-        req = i2c_item::type_id::create("req");
-        start_item(req);
-        `DV_CHECK_RANDOMIZE_WITH_FATAL(req,
+      // get seq for agent running in Host mode
+      req = i2c_item::type_id::create("req");
+      start_item(req);
+      `DV_CHECK_RANDOMIZE_WITH_FATAL(req,
+                                       addr dist { cfg.target_addr0 :/ 1, cfg.target_addr1 :/ 1 };
                                        data_q.size() == local::data_q.size();
-                                       foreach (data_q[i]) {
-                                         data_q[i] == local::data_q[i];
-                                       })
-        finish_item(req);
-        get_response(rsp);
-      end
+                                       foreach (data_q[i]) { data_q[i] == local::data_q[i]; }
+                                       start == local::start_flag;
+                                       stop == local::stop_flag;
+                                     )
+      finish_item(req);
+      get_response(rsp);
     end
   endtask : body
 

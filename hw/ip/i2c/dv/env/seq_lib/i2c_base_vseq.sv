@@ -12,9 +12,7 @@ class i2c_base_vseq extends cip_base_vseq #(
 
   // class property
   bit                         program_incorrect_regs = 1'b0;
-
   local timing_cfg_t          timing_cfg;
-  bit [7:0]                   rd_data;
   i2c_item                    fmt_item;
 
   // random property
@@ -27,10 +25,16 @@ class i2c_base_vseq extends cip_base_vseq #(
   rand uint                   num_rd_bytes;
   rand uint                   num_data_ovf;
   rand bit                    rw_bit;
-  rand bit   [7:0]            wr_data[$];
+  rand bit   [7:0]            wr_data;
+  rand bit   [7:0]            data_q[$];
   rand bit   [9:0]            addr;  // support both 7-bit and 10-bit target address
   rand bit   [2:0]            rxilvl;
   rand bit   [1:0]            fmtilvl;
+  // target
+  rand bit   [6:0]            target_addr0;
+  rand bit   [6:0]            target_addr1;
+  rand bit   [6:0]            target_mask0;
+  rand bit   [6:0]            target_mask1;
 
   // timing property
   rand bit [15:0]             thigh;      // high period of the SCL in clock units
@@ -69,10 +73,9 @@ class i2c_base_vseq extends cip_base_vseq #(
   }
 
   // get an array with unique write data
-  constraint wr_data_c {
-    solve num_wr_bytes before wr_data;
-    wr_data.size == num_wr_bytes;
-    unique { wr_data };
+  constraint data_size_c {
+    solve num_wr_bytes before data_q;
+    data_q.size == num_wr_bytes;
   }
 
   // number of extra data write written to fmt to trigger interrupts
@@ -80,7 +83,6 @@ class i2c_base_vseq extends cip_base_vseq #(
   constraint num_data_ovf_c {
     num_data_ovf inside {[I2C_RX_FIFO_DEPTH/4 : I2C_RX_FIFO_DEPTH/2]};
   }
-
   // create uniform assertion distributions of rx_watermark interrupt
   constraint rxilvl_c {
     rxilvl dist {
@@ -135,6 +137,16 @@ class i2c_base_vseq extends cip_base_vseq #(
     t_timeout inside {[cfg.seq_cfg.i2c_min_timing : cfg.seq_cfg.i2c_max_timing]};
   }
 
+  // for targets
+  constraint target_c {
+    target_addr0 inside {[cfg.seq_cfg.i2c_min_addr : cfg.seq_cfg.i2c_max_addr]};
+    target_addr1 inside {[cfg.seq_cfg.i2c_min_addr : cfg.seq_cfg.i2c_max_addr]};
+    // TODO: debug
+    //target_mask0 inside {[cfg.seq_cfg.i2c_min_addr : cfg.seq_cfg.i2c_max_addr]};
+    //target_mask1 inside {[cfg.seq_cfg.i2c_min_addr : cfg.seq_cfg.i2c_max_addr]};
+    {target_mask0, target_mask1} == {target_addr0, target_addr1};
+  }
+
   constraint timing_val_c {
     thigh   inside {[cfg.seq_cfg.i2c_min_timing : cfg.seq_cfg.i2c_max_timing]};
     t_r     inside {[cfg.seq_cfg.i2c_min_timing : cfg.seq_cfg.i2c_max_timing]};
@@ -177,7 +189,6 @@ class i2c_base_vseq extends cip_base_vseq #(
     `uvm_info(`gfn, $sformatf("\n  %s monitor and scoreboard",
         cfg.en_scb ? "enable" : "disable"), UVM_DEBUG)
     num_runs.rand_mode(0);
-    num_trans_c.constraint_mode(0);
     super.pre_start();
   endtask : pre_start
 
@@ -201,19 +212,20 @@ class i2c_base_vseq extends cip_base_vseq #(
   endtask : initialization
 
   virtual task agent_init(if_mode_e mode = Device);
-    i2c_base_seq m_base_seq;
+    i2c_base_seq m_i2c_base_seq;
 
     cfg.m_i2c_agent_cfg.if_mode = mode;
-    `uvm_info(`gfn, $sformatf("\n  initialize agent in mode %s", mode.name()), UVM_DEBUG)
+    cfg.m_i2c_agent_cfg.vif.if_mode = mode;
+    `uvm_info(`gfn, $sformatf("\n  initialize AGENT in %s mode", mode.name()), UVM_LOW)
     if (mode == Host) begin
       // stop re-active seq when the agent switches to Host mode
       p_sequencer.i2c_sequencer_h.stop_sequences();
     end else begin
-      m_base_seq = i2c_base_seq::type_id::create("m_base_seq");
+      m_i2c_base_seq = i2c_base_seq::type_id::create("m_i2c_base_seq");
       `uvm_info(`gfn, $sformatf("\n  start i2c_sequence %s",
           cfg.m_i2c_agent_cfg.if_mode.name()), UVM_DEBUG)
       fork
-        m_base_seq.start(p_sequencer.i2c_sequencer_h);
+        m_i2c_base_seq.start(p_sequencer.i2c_sequencer_h);
       join_none
     end
     // TODO: initialization for the agent running in Host mode
@@ -222,7 +234,7 @@ class i2c_base_vseq extends cip_base_vseq #(
   virtual task i2c_init(if_mode_e mode = Host);
     bit [TL_DW-1:0] intr_state;
 
-    `uvm_info(`gfn, $sformatf("\n  initialize host in mode %s", mode.name()), UVM_DEBUG)
+    `uvm_info(`gfn, $sformatf("\n  initialize DUT in %s mode", mode.name()), UVM_LOW)
     if (mode == Host) begin
       ral.ctrl.enablehost.set(1'b1);
       ral.ctrl.enabletarget.set(1'b0);
@@ -230,26 +242,25 @@ class i2c_base_vseq extends cip_base_vseq #(
       // diable override
       ral.ovrd.txovrden.set(1'b0);
       csr_update(ral.ovrd);
+      // clear fifos
+      ral.fifo_ctrl.rxrst.set(1'b1);
+      ral.fifo_ctrl.fmtrst.set(1'b1);
+      csr_update(ral.fifo_ctrl);
     end else begin
       ral.ctrl.enablehost.set(1'b0);
       ral.ctrl.enabletarget.set(1'b1);
       csr_update(ral.ctrl);
-      // TODO: more initialization for the host running Target mode
+      // clear fifos
+      ral.fifo_ctrl.acqrst.set(1'b1);
+      ral.fifo_ctrl.txrst.set(1'b1);
+      csr_update(ral.fifo_ctrl);
     end
-
-    // clear fifos
-    ral.fifo_ctrl.rxrst.set(1'b1);
-    ral.fifo_ctrl.fmtrst.set(1'b1);
-    ral.fifo_ctrl.acqrst.set(1'b1);
-    ral.fifo_ctrl.txrst.set(1'b1);
-    csr_update(ral.fifo_ctrl);
-
     //enable then clear interrupts
     csr_wr(.ptr(ral.intr_enable), .value({TL_DW{1'b1}}));
     process_interrupts();
   endtask : i2c_init
 
-  virtual task wait_for_reprogram_registers();
+  virtual task wait_for_reprog_i2c_regs();
     bit fmtempty, hostidle;
     bit [TL_DW-1:0] reg_val;
 
@@ -260,7 +271,7 @@ class i2c_base_vseq extends cip_base_vseq #(
       hostidle = bit'(get_field_val(ral.status.hostidle, reg_val));
     end while (!fmtempty || !hostidle);
     `uvm_info(`gfn, $sformatf("\n  registers can be reprogrammed"), UVM_DEBUG);
-  endtask : wait_for_reprogram_registers
+  endtask : wait_for_reprog_i2c_regs
 
   virtual task wait_host_for_idle();
     bit fmtempty, hostidle, rxempty;
@@ -276,7 +287,7 @@ class i2c_base_vseq extends cip_base_vseq #(
     `uvm_info(`gfn, $sformatf("\n  host is in idle state"), UVM_DEBUG);
   endtask : wait_host_for_idle
 
-  function automatic void get_timing_values();
+  function automatic void prog_agent_regs();
     // derived timing parameters
     timing_cfg.enbTimeOut  = e_timeout;
     timing_cfg.tTimeOut    = t_timeout;
@@ -308,10 +319,10 @@ class i2c_base_vseq extends cip_base_vseq #(
       `DV_CHECK_GT_FATAL(timing_cfg.tClockStop, 0)
       `DV_CHECK_GT_FATAL(timing_cfg.tHoldStop, 0)
     end
-  endfunction : get_timing_values
+  endfunction : prog_agent_regs
 
-  virtual task program_registers();
-    //*** program timing register
+  virtual task prog_i2c_regs(if_mode_e mode = Host);
+    // Dual mode: program timing register
     ral.timing0.tlow.set(tlow);
     ral.timing0.thigh.set(thigh);
     csr_update(.csr(ral.timing0));
@@ -332,19 +343,46 @@ class i2c_base_vseq extends cip_base_vseq #(
     csr_update(.csr(ral.timeout_ctrl));
     // configure i2c_agent_cfg
     cfg.m_i2c_agent_cfg.timing_cfg = timing_cfg;
-    cfg.m_i2c_agent_cfg.num_trans  = num_trans;
     `uvm_info(`gfn, $sformatf("\n  cfg.m_i2c_agent_cfg.timing_cfg\n%p",
         cfg.m_i2c_agent_cfg.timing_cfg), UVM_DEBUG)
 
-    //*** program ilvl
-    `DV_CHECK_MEMBER_RANDOMIZE_FATAL(fmtilvl)
-    `DV_CHECK_MEMBER_RANDOMIZE_FATAL(rxilvl)
-    ral.fifo_ctrl.rxilvl.set(rxilvl);
-    ral.fifo_ctrl.fmtilvl.set(fmtilvl);
-    csr_update(ral.fifo_ctrl);
-  endtask : program_registers
+    if (mode == Device) begin
+      // DUT in Target mode: program target_id and txdata to fill up txfifo
+      ral.target_id.address0.set(target_addr0);
+      ral.target_id.address1.set(target_addr1);
+      ral.target_id.mask0.set(target_mask0);
+      ral.target_id.mask1.set(target_mask1);
+      csr_update(.csr(ral.target_id));
 
-  virtual task program_format_flag(i2c_item item, string msg = "", bit do_print = 1'b0);
+      cfg.m_i2c_agent_cfg.num_trans    = num_trans;
+      cfg.m_i2c_agent_cfg.target_addr0 = target_addr0;
+      cfg.m_i2c_agent_cfg.target_addr1 = target_addr1;
+      cfg.m_i2c_agent_cfg.target_mask0 = target_mask0;
+      cfg.m_i2c_agent_cfg.target_mask1 = target_mask1;
+      prog_data_to_txfifo();
+    end else begin
+      // DUT in Host mode: program ilvl
+      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(fmtilvl)
+      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(rxilvl)
+      ral.fifo_ctrl.rxilvl.set(rxilvl);
+      ral.fifo_ctrl.fmtilvl.set(fmtilvl);
+      csr_update(ral.fifo_ctrl);
+    end
+  endtask : prog_i2c_regs
+
+  virtual task prog_data_to_txfifo (uint num_bytes = I2C_TX_FIFO_DEPTH);
+    // fill up tx_fifo for read transaction
+    `DV_CHECK_STD_RANDOMIZE_WITH_FATAL(data_q,
+                                       data_q.size == num_bytes;
+                                      )
+    for (int i = 0; i < data_q.size(); i++) begin
+      csr_wr(.ptr(ral.txdata), .value(data_q[i]));
+      `uvm_info(`gfn, $sformatf("\n  program to txfifo data_q[%0d] 0h%0x",
+          i, data_q[i]), UVM_LOW)
+    end
+  endtask : prog_data_to_txfifo
+
+  virtual task prog_format_flags(i2c_item item, string msg = "", bit do_print = 1'b0);
     bit fmtfull;
 
     ral.fdata.nakok.set(item.nakok);
@@ -364,11 +402,10 @@ class i2c_base_vseq extends cip_base_vseq #(
     wait(!cfg.intr_vif.pins[FmtOverflow]);
     // program fmt_fifo
     csr_update(.csr(ral.fdata));
-
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(fmt_fifo_access_dly)
     cfg.clk_rst_vif.wait_clks(fmt_fifo_access_dly);
-    print_format_flag(item, msg, do_print);
-  endtask : program_format_flag
+    print_format_flags(item, msg, do_print);
+  endtask : prog_format_flags
 
   // read interrupts and randomly clear interrupts if set
   virtual task process_interrupts();
@@ -416,7 +453,7 @@ class i2c_base_vseq extends cip_base_vseq #(
     end
   endfunction : print_seq_cfg_vars
 
-  virtual function void print_format_flag(i2c_item item, string msg = "", bit do_print = 1'b0);
+  virtual function void print_format_flags(i2c_item item, string msg = "", bit do_print = 1'b0);
     if (do_print) begin
       string str;
       str = {str, $sformatf("\n%s, format flags 0x%h \n", msg,
@@ -435,7 +472,7 @@ class i2c_base_vseq extends cip_base_vseq #(
       end
       `uvm_info(`gfn, $sformatf("%s", str), UVM_LOW)
     end
-  endfunction : print_format_flag
+  endfunction : print_format_flags
 
   virtual function void bound_check(bit [TL_DW-1:0] x, uint low_bound, uint high_bound);
     // check low_bound <= x <= high_bound

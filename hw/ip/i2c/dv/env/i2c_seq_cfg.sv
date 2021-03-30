@@ -15,6 +15,9 @@ class i2c_seq_cfg extends uvm_object;
   uint i2c_min_num_runs          = 5;
   uint i2c_max_num_runs          = 10;
 
+  // knobs for number of mode switching
+  uint i2c_num_mode_switch       = 6;
+
   // knobs for dut's registers
   uint i2c_min_addr              = 0;
   uint i2c_max_addr              = 127;

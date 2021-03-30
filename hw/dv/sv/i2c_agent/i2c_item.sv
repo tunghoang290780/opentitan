@@ -5,11 +5,11 @@
 class i2c_item extends uvm_sequence_item;
 
   // transaction data part
-  bit [7:0]                data_q[$];
-  bit [9:0]                addr;      // enough to support both 7 & 10-bit target address
   int                      tran_id;
+  bit [7:0]                rd_data;
+  bit                      do_stretch_clk;
+
   int                      num_data;  // valid data
-  bus_op_e                 bus_op;
   drv_type_e               drv_type;
   // transaction control part
   bit                      nack;
@@ -19,19 +19,24 @@ class i2c_item extends uvm_sequence_item;
   // queue dropped data due to fmt_overflow
   bit [7:0]                fmt_ovf_data_q[$];
 
+  // random rx/tx address and bus_op
+  rand bit [9:0]           addr;  // enough to support both 7 & 10-bit target address
+  rand bus_op_e            bus_op;
+  rand bit [7:0]           data_q[$];
+
   // random flags
   rand bit [7:0]           fbyte;
   rand bit                 nakok, rcont, read, stop, start;
 
-  constraint fbyte_c     { fbyte      inside {[0 : 127]}; }
-  constraint rcont_c     {
-     solve read, stop before rcont;
-     // for read request, rcont and stop must be complementary set
-     if (read) {
-       rcont == ~stop;
-     } else {
-       rcont dist { 1 :/ 1, 0 :/ 2 };
-     }
+  constraint fbyte_c { fbyte inside {[0 : 127]}; }
+  constraint rcont_c {
+    solve read, stop before rcont;
+    // for read request, rcont and stop must be complementary set
+    if (read) {
+     rcont == ~stop;
+    } else {
+     rcont dist { 1 :/ 1, 0 :/ 2 };
+    }
   }
 
   `uvm_object_utils_begin(i2c_item)

@@ -2,7 +2,10 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
+`include "uvm_macros.svh"
+
 import i2c_agent_pkg::*;
+import dv_utils_pkg::*;
 
 interface i2c_if;
   logic clk_i;
@@ -10,10 +13,27 @@ interface i2c_if;
 
   // standard i2c interface pins
   logic scl_i;
-  logic scl_o;
   logic sda_i;
+  logic scl_o;
   logic sda_o;
 
+  // muxes routes signals from vif to monitor depending on the operated mode of agent
+  if_mode_e if_mode;
+  logic mscl_i;
+  logic msda_i;
+  logic mscl_o;
+  logic msda_o;
+
+  always_comb begin
+    // agent in device mode (default)
+    {mscl_i, msda_i} = {scl_i, sda_i};      // DUT   (host)   req
+    {mscl_o, msda_o} = {scl_o, sda_o};      // Agent (device) rsp
+    if (if_mode == Host) begin
+      // agent in Host mode
+      {mscl_i, msda_i} = {scl_o, sda_o};    // DUT   (target) rsp
+      {mscl_o, msda_o} = {scl_i, sda_i};    // Agent (host)   req
+    end
+  end
   //---------------------------------
   // common tasks
   //---------------------------------
@@ -21,11 +41,21 @@ interface i2c_if;
     repeat (dly) @(posedge clk_i);
   endtask : wait_for_dly
 
+  task automatic control_bus(bit do_assert = 1'b1);
+    if (do_assert) begin
+      scl_o = 1'b1;
+      sda_o = 1'b1;
+    end else begin
+      scl_o = 1'b0;
+      sda_o = 1'b0;
+    end
+  endtask : control_bus
+
   task automatic wait_for_host_start(ref timing_cfg_t tc);
     forever begin
-      @(negedge sda_i);
+      @(negedge msda_i);
       wait_for_dly(tc.tHoldStart);
-      @(negedge scl_i);
+      @(negedge mscl_i);
       wait_for_dly(tc.tClockStart);
       break;
     end
@@ -35,12 +65,12 @@ interface i2c_if;
                                       output bit rstart);
     rstart = 1'b0;
     forever begin
-      @(posedge scl_i && sda_i);
+      @(posedge mscl_i && msda_i);
       wait_for_dly(tc.tSetupStart);
-      @(negedge sda_i);
-      if (scl_i) begin
+      @(negedge msda_i);
+      if (mscl_i) begin
         wait_for_dly(tc.tHoldStart);
-        @(negedge scl_i) begin
+        @(negedge mscl_i) begin
           rstart = 1'b1;
           break;
         end
@@ -52,9 +82,9 @@ interface i2c_if;
                                     output bit stop);
     stop = 1'b0;
     forever begin
-      @(posedge scl_i);
-      @(posedge sda_i);
-      if (scl_i) begin
+      @(posedge mscl_i);
+      @(posedge msda_i);
+      if (mscl_i) begin
         stop = 1'b1;
         break;
       end
@@ -77,11 +107,11 @@ interface i2c_if;
   endtask: wait_for_host_stop_or_rstart
 
   task automatic wait_for_host_ack(ref timing_cfg_t tc);
-    @(negedge sda_i);
+    @(negedge msda_i);
     wait_for_dly(tc.tClockLow + tc.tSetupBit);
     forever begin
-      @(posedge scl_i);
-      if (!sda_i) begin
+      @(posedge mscl_i);
+      if (!msda_i) begin
         wait_for_dly(tc.tClockPulse);
         break;
       end
@@ -90,11 +120,11 @@ interface i2c_if;
   endtask: wait_for_host_ack
 
   task automatic wait_for_host_nack(ref timing_cfg_t tc);
-    @(negedge sda_i);
+    @(negedge msda_i);
     wait_for_dly(tc.tClockLow + tc.tSetupBit);
     forever begin
-      @(posedge scl_i);
-      if (sda_i) begin
+      @(posedge mscl_i);
+      if (msda_i) begin
         wait_for_dly(tc.tClockPulse);
         break;
       end
@@ -125,11 +155,11 @@ interface i2c_if;
   endtask: wait_for_host_ack_or_nack
 
   task automatic wait_for_device_ack(ref timing_cfg_t tc);
-    @(negedge sda_o && scl_o);
+    @(negedge msda_o && mscl_o);
     wait_for_dly(tc.tSetupBit);
     forever begin
-      @(posedge scl_i);
-      if (!sda_o) begin
+      @(posedge mscl_i);
+      if (!msda_o) begin
         wait_for_dly(tc.tClockPulse);
         break;
       end
@@ -146,14 +176,14 @@ interface i2c_if;
     wait_for_dly(tc.tClockLow);
     sda_o = bit_i;
     wait_for_dly(tc.tSetupBit);
-    @(posedge scl_i);
+    @(posedge mscl_i);
     // flip sda_target2host during the clock pulse of scl_host2target causes sda_unstable irq
     sda_o = ~sda_o;
     wait_for_dly(tc.tSdaUnstable);
     sda_o = ~sda_o;
     wait_for_dly(tc.tClockPulse + tc.tHoldBit - tc.tSdaUnstable);
     // not release/change sda_o until host clock stretch passes
-    if (tc.enbTimeOut) wait(!scl_i);
+    if (tc.enbTimeOut) wait(!mscl_i);
     sda_o = 1'b1;
   endtask: device_send_bit
 
@@ -164,25 +194,30 @@ interface i2c_if;
   // when the I2C module is in transmit mode, `scl_interference` interrupt
   // will be asserted if the IP identifies that some other device (host or target) on the bus
   // is forcing scl low and interfering with the transmission.
-  task automatic device_stretch_host_clk(ref timing_cfg_t tc);
-    if (tc.enbTimeOut && tc.tTimeOut > 0) begin
+  task automatic device_stretch_host_clk(ref timing_cfg_t tc,
+                                         input bit en_interference = 1'b1);
+    if (en_interference && tc.enbTimeOut && tc.tTimeOut > 0) begin
       wait_for_dly(tc.tClockLow + tc.tSetupBit + tc.tSclInterference - 1);
       scl_o = 1'b0;
       wait_for_dly(tc.tStretchHostClock - tc.tSclInterference + 1);
       scl_o = 1'b1;
+    end else begin
+      scl_o = 1'b0;
+      wait_for_dly(tc.tStretchHostClock);
+      scl_o = 1'b1;
     end
   endtask : device_stretch_host_clk
 
-  // when the I2C module is in transmit mode, `sda_interference` interrupt
+  // when the I2C module is in transmit mode, `msda_interference` interrupt
   // will be asserted if the IP identifies that some other device (host or target) on the bus
   // is forcing sda low and interfering with the transmission.
   task automatic get_bit_data(string src = "host",
                               ref timing_cfg_t tc,
                               output bit bit_o);
     wait_for_dly(tc.tClockLow + tc.tSetupBit);
-    @(posedge scl_i);
+    @(posedge mscl_i);
     if (src == "host") begin // host transmits data (addr/wr_data)
-      bit_o = sda_i;
+      bit_o = msda_i;
       // force sda_target2host low during the clock pulse of scl_host2target
       sda_o = 1'b0;
       wait_for_dly(tc.tSdaInterference);
@@ -197,20 +232,22 @@ interface i2c_if;
   //----------------------------------------------------------
   // TODO: tasks support agent operating in Host mode
   //----------------------------------------------------------
-  task automatic host_control_bus(ref       timing_cfg_t tc,
-                                  input     drv_type_e drv_type,
+  task automatic host_control_bus(ref timing_cfg_t tc,
+                                  input drv_type_e drv_type,
                                   input bit bit_i);
     case (drv_type)
       HostStart: begin
-        sda_o = 1'b1;
         scl_o = 1'b1;
+        sda_o = 1'b1;
+        wait_for_dly(tc.tSetupStart);
+        sda_o = 1'b0;
         wait_for_dly(tc.tHoldStart);
         scl_o = 1'b0;
+        wait_for_dly(tc.tClockStart);
       end
-      HostAckOrNotAck: begin
-        // bit_i = 0/1: Ack/NotAck
-        sda_o = 1'b0;
-        scl_o = 1'b0;
+      HostAckOrNoAck: begin
+        // bit_i = 0/1: Ack/NoAck
+        control_bus(.do_assert(1'b0));
         wait_for_dly(tc.tSetupBit);
         sda_o = bit_i;
         wait_for_dly(tc.tClockPulse);
@@ -220,8 +257,7 @@ interface i2c_if;
       end
       HostStopOrRStart: begin
         // bit_i = 0/1: RStart/Stop
-        sda_o = 1'b0;
-        scl_o = 1'b0;
+        control_bus(.do_assert(1'b0));
         wait_for_dly(tc.tClockStop);
         scl_o = 1'b1;
         wait_for_dly(tc.tSetupStop);
@@ -231,15 +267,15 @@ interface i2c_if;
         end
       end
       HostData: begin
-        // also use for address bits and r/w bit
+        // also used for address bits and r/w bit
         scl_o = 1'b0;
-        sda_o = 1'b0;
         wait_for_dly(tc.tClockLow);
         sda_o = bit_i;
+        `uvm_info("i2c_if", $sformatf("\n  end of tClockLow, sda_o %b", sda_o), UVM_LOW)
         wait_for_dly(tc.tSetupBit);
         scl_o = 1'b1;
         wait_for_dly(tc.tClockPulse);
-        scl_o = 1'b1;
+        scl_o = 1'b0;
         wait_for_dly(tc.tHoldBit);
       end
     endcase

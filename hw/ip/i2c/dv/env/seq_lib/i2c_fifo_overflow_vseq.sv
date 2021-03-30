@@ -30,7 +30,7 @@ class i2c_fifo_overflow_vseq extends i2c_rx_tx_vseq;
     super.pre_start();
     // config fmt_overflow and rx_overflow tests
     cfg.seq_cfg.en_fmt_overflow = 1'b1;
-    cfg.seq_cfg.en_rx_overflow  = 1'b1;
+    cfg.seq_cfg.en_rx_overflow = 1'b1;
     print_seq_cfg_vars("pre-start");
   endtask : pre_start
 
@@ -40,6 +40,7 @@ class i2c_fifo_overflow_vseq extends i2c_rx_tx_vseq;
     bit rxempty = 1'b0;
 
     initialization(.mode(Host));
+
     `uvm_info(`gfn, "\n--> start of i2c_fifo_overflow_vseq", UVM_DEBUG)
     for (int i = 1; i <= num_trans; i++) begin
       check_fmt_overflow = 1'b1; // set to gracefully stop process_fmt_overflow_intr
