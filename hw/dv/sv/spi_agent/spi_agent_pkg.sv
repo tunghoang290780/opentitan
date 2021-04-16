@@ -12,7 +12,10 @@ package spi_agent_pkg;
   `include "uvm_macros.svh"
   `include "dv_macros.svh"
 
-  // local types
+  // parameter
+  parameter uint MAX_CS = 4;      // set to the maximum valid value
+  parameter uint BYTE_ORDER = 1;  // must be same as ByteOrder defined in spi_host_reg_pkg
+
   // transaction type
   typedef enum {
     SpiTransNormal,    // normal SPI trans
@@ -29,35 +32,20 @@ package spi_agent_pkg;
   } sck_edge_type_e;
 
   // spi mode
-  typedef enum {
-    Single = 0,  // Full duplex, tx: sio[0], rx: sio[1]
-    Dual   = 1,  // Half duplex, tx and rx: sio[1:0]
-    Quad   = 2   // Half duplex, tx and rx: sio[3:0]
+  typedef enum logic [1:0] {
+    Standard = 2'b00,  // Full duplex, tx: sio[0], rx: sio[1]
+    Dual     = 2'b01,  // Half duplex, tx and rx: sio[1:0]
+    Quad     = 2'b10,  // Half duplex, tx and rx: sio[3:0]
+    RsvdSpd  = 2'b11   // RFU
   } spi_mode_e;
 
-  // spi config
-  typedef struct {
-    // CONTROL register field
-    rand bit [8:0]  tx_watermark;
-    rand bit [6:0]  rx_watermark;
-    // CONFIGOPTS register field
-    rand bit        cpol;
-    rand bit        cpha;
-    rand bit        fullcyc;
-    rand bit        csaat;
-    rand bit [3:0]  csnlead;
-    rand bit [3:0]  csntrail;
-    rand bit [3:0]  csnidle;
-    rand bit [15:0] clkdiv;
-    // COMMAND register field
-    rand bit        fulldplx;
-    rand bit        highz;
-    rand bit        speed;
-    rand bit [3:0]  tx1_cnt;
-    rand bit [8:0]  txn_cnt;
-    rand bit [8:0]  rx_cnt;
-    rand bit [3:0]  dummy_cycles;
-  } spi_regs_t;
+  // spi direction
+  typedef enum logic [1:0] {
+    Dummy    = 2'b00,
+    RxOnly   = 2'b01,
+    TxOnly   = 2'b10,
+    Bidir    = 2'b11
+  } spi_dir_e;
 
   // forward declare classes to allow typedefs below
   typedef class spi_item;
