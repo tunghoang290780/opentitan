@@ -13,6 +13,7 @@ package spi_host_env_pkg;
   import spi_agent_pkg::*;
   import cip_base_pkg::*;
   import dv_base_reg_pkg::*;
+  import spi_host_reg_pkg::*;
   import spi_host_ral_pkg::*;
 
   // parameters

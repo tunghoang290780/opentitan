@@ -77,36 +77,42 @@ class spi_host_base_vseq extends cip_base_vseq #(
       };
     // configopts regs
       foreach (spi_regs.cpol[i]) {
-        spi_regs.cpol[i] == 1'b0;     // TODO: hardcode for debug
+        spi_regs.cpol[i] dist {
+          1'b0 :/ 1,     // TODO: hardcode for debug
+          1'b1 :/ 0
+        };
       }
       foreach (spi_regs.cpha[i]) {
-        spi_regs.cpha[i] == 1'b0;     // TODO: hardcode for debug
+        spi_regs.cpha[i] dist {
+          1'b0 :/ 1,     // TODO: hardcode for debug
+          1'b1 :/ 0
+        };
       }
       foreach (spi_regs.csnlead[i]) {
-        spi_regs.csnlead[i] inside {[cfg.seq_cfg.host_spi_min_csn_hcyc :
-                                     cfg.seq_cfg.host_spi_max_csn_hcyc]};
+        spi_regs.csnlead[i] inside {[cfg.seq_cfg.host_spi_min_csn_latency :
+                                     cfg.seq_cfg.host_spi_max_csn_latency]};
       }
       foreach (spi_regs.csntrail[i]) {
-        spi_regs.csntrail[i] inside {[cfg.seq_cfg.host_spi_min_csn_hcyc :
-                                      cfg.seq_cfg.host_spi_max_csn_hcyc]};
+        spi_regs.csntrail[i] inside {[cfg.seq_cfg.host_spi_min_csn_latency :
+                                      cfg.seq_cfg.host_spi_max_csn_latency]};
       }
       foreach (spi_regs.csnidle[i]) {
-        spi_regs.csnidle[i] inside {[cfg.seq_cfg.host_spi_min_csn_hcyc :
-                                     cfg.seq_cfg.host_spi_max_csn_hcyc]};
+        spi_regs.csnidle[i] inside {[cfg.seq_cfg.host_spi_min_csn_latency :
+                                     cfg.seq_cfg.host_spi_max_csn_latency]};
       }
       foreach (spi_regs.clkdiv[i]) {
-        spi_regs.clkdiv[i] inside {[cfg.seq_cfg.host_spi_min_csn_hcyc :
-                                    cfg.seq_cfg.host_spi_max_csn_hcyc]};
+        spi_regs.clkdiv[i] inside {[cfg.seq_cfg.host_spi_min_clkdiv :
+                                    cfg.seq_cfg.host_spi_max_clkdiv]};
       }
     // command reg
       spi_regs.len inside {[cfg.seq_cfg.host_spi_min_len : cfg.seq_cfg.host_spi_max_len]};
       spi_regs.speed dist {
         Standard :/ 2,
-        Dual     :/ 0,  // TODO: hardcode for debug
-        Quad     :/ 0   // TODO: hardcode for debug
+        Dual     :/ 0,  // TODO: hardcode Dual=0 for debug
+        Quad     :/ 0   // TODO: hardcode Dual=0 for debug
       };
       if (spi_regs.speed == Standard) {
-        spi_regs.direction dist {Dummy :/ 0, Bidir :/ 4};
+        spi_regs.direction dist {Dummy :/ 0, Bidir :/ 4}; // TODO: hardcode Dummy=0 for debug
       } else {
         spi_regs.direction dist {Dummy :/ 0, TxOnly :/ 4, RxOnly :/ 4};
       }
@@ -114,27 +120,25 @@ class spi_host_base_vseq extends cip_base_vseq #(
 
   virtual task body();
     initialization();
-
     `DV_CHECK_RANDOMIZE_FATAL(this)
     program_spi_host_regs();
     print_spi_host_regs();
     activate_spi_host();
-    `uvm_info(`gfn, "\n  start access fifos", UVM_DEBUG)
+    `uvm_info(`gfn, "\n  base_vseq, active spi_host channels, start rx/tx", UVM_LOW)
     write_tx_data();
   endtask : body
 
   virtual task bk_body();
     initialization();
-    cfg.seq_cfg.host_spi_max_num_wr_bytes = 5;
 
     rxtx_atomic = new(1);
     for (int trans = 0; trans < num_trans; trans++) begin
-      `uvm_info(`gfn, $sformatf("\n--> running tran. %0d/%0d", trans, num_trans), UVM_DEBUG)
+      `uvm_info(`gfn, $sformatf("\n--> running tran. %0d/%0d", trans, num_trans), UVM_LOW)
       `DV_CHECK_RANDOMIZE_FATAL(this)
       program_spi_host_regs();
       print_spi_host_regs();
       activate_spi_host();
-      `uvm_info(`gfn, "\n  start access fifos", UVM_DEBUG)
+      `uvm_info(`gfn, "\n  base_vseq, active spi_host channels, start rx/tx", UVM_LOW)
       fork
         begin
           //rxtx_atomic.get(1);
@@ -150,12 +154,12 @@ class spi_host_base_vseq extends cip_base_vseq #(
       join
       wait_for_fifos_empty();
     end
-  endtask : body
+  endtask : bk_body
 
   virtual task pre_start();
     // sync monitor and scoreboard setting
     cfg.m_spi_agent_cfg.en_monitor_checks = cfg.en_scb;
-    `uvm_info(`gfn, $sformatf("\n  %s monitor and scoreboard",
+    `uvm_info(`gfn, $sformatf("\n  base_vseq, %s monitor and scoreboard",
         cfg.en_scb ? "enable" : "disable"), UVM_DEBUG)
     num_runs.rand_mode(0);
     num_trans_c.constraint_mode(0);
@@ -163,16 +167,17 @@ class spi_host_base_vseq extends cip_base_vseq #(
   endtask : pre_start
 
   virtual task initialization();
-    `uvm_info(`gfn, "\n  initialization spi_host", UVM_LOW)
     wait(cfg.m_spi_agent_cfg.vif.rst_n);
-    `uvm_info(`gfn, "\n  initialization, out of reset", UVM_LOW)
+    `uvm_info(`gfn, "\n  base_vseq, out of reset", UVM_LOW)
     spi_host_init();
     spi_agent_init();
-    `uvm_info(`gfn, "\n  spi_host initialization is completed", UVM_LOW)
+    `uvm_info(`gfn, "\n  base_vseq, initialization is completed", UVM_LOW)
   endtask : initialization
 
   // setup basic spi_host features
   virtual task spi_host_init();
+    bit [TL_DW-1:0] intr_state;
+
     // reset spit_host dut
     ral.control.sw_rst.set(1'b1);
     csr_update(ral.control);
@@ -182,16 +187,17 @@ class spi_host_base_vseq extends cip_base_vseq #(
     csr_update(ral.control);
     // enable then clear interrupts
     csr_wr(.ptr(ral.intr_enable), .value({TL_DW{1'b1}}));
-    process_interrupts();
+    csr_rd(.ptr(ral.intr_state), .value(intr_state));
+    csr_wr(.ptr(ral.intr_state), .value(intr_state));
   endtask : spi_host_init
 
   virtual task spi_agent_init();
     // spi_agent is configured in the Denive mode
-    spi_device_seq m_device_seq;
-    m_device_seq = spi_device_seq::type_id::create("m_device_seq");
-    `uvm_info(`gfn, "\n  start spi_device sequence", UVM_DEBUG)
+    spi_device_seq m_spi_device_seq;
+    m_spi_device_seq = spi_device_seq::type_id::create("m_spi_device_seq");
+    `uvm_info(`gfn, "\n  base_vseq, start spi_device_seq", UVM_LOW)
     fork
-      m_device_seq.start(p_sequencer.spi_host_sequencer_h);
+      m_spi_device_seq.start(p_sequencer.spi_host_sequencer_h);
     join_none
   endtask : spi_agent_init
 
@@ -201,8 +207,9 @@ class spi_host_base_vseq extends cip_base_vseq #(
   endtask : activate_spi_host
 
   virtual task program_spi_host_regs();
-    program_command_reg();
+    // IMPORTANT: configopt regs must be programmed before command reg
     program_configopt_regs();
+    program_command_reg();
     program_control_reg();
   endtask : program_spi_host_regs
 
@@ -245,31 +252,39 @@ class spi_host_base_vseq extends cip_base_vseq #(
   endtask : program_command_reg
 
   virtual task write_tx_data();
+    int byte_len = 0;
     bit [TL_DW-1:0] tx_wdata;
     bit [TL_AW-1:0] fifo_waddr;
+    int nbytes;
 
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(fifo_baddr)
     fifo_waddr = ral.get_addr_from_offset(fifo_baddr);
     `uvm_info(`gfn, $sformatf("\n  base_vseq, tx_byte_addr: 0x%0x", fifo_baddr), UVM_LOW)
     `uvm_info(`gfn, $sformatf("\n  base_vseq, tx_word_addr: 0x%0x", fifo_waddr), UVM_LOW)
     `DV_CHECK_MEMBER_RANDOMIZE_WITH_FATAL(data_q,
-                                          data_q.size() == num_wr_bytes;
+                                          data_q.size() == spi_regs.len + 1;
                                          )
-    if (SPI_HOST_BYTEORDER) swap_array_byte_order(data_q);
+    `uvm_info(`gfn, $sformatf("\n  base_vseq, write %0d bytes to tx_fifo",
+        data_q.size()), UVM_LOW)
+    if (!SPI_HOST_BYTEORDER) swap_array_byte_order(data_q);
 
-    // iterate through the data queue and pop off bytes to write to tx_fifo
+    // iterate through the data_q and pop off words to write to tx_fifo
     while (data_q.size() > 0) begin
       wait_for_fifos_available(TxFifo);
       tx_wdata = '0;
-      for (int i = 0; i < TL_DBW; i++) begin
+      // get a word data which is programm to the data register
+      for (nbytes = 0; nbytes < TL_DBW; nbytes++) begin
         if (data_q.size() > 0) begin
-          tx_wdata[8*i +: 8] = data_q.pop_front();
+          tx_wdata[8*nbytes +: 8] = data_q.pop_front();
+          byte_len++;
         end
       end
-      tx_wdata = 32'hcafecafe; //TODO: override random value for debug
       send_tl_access(.addr(fifo_waddr), .data(tx_wdata), .write(1'b1), .blocking(1'b0));
-      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(rx_fifo_access_dly)
-      cfg.clk_rst_vif.wait_clks(rx_fifo_access_dly);
+      // issue seq for spi write transaction
+      send_spi_seq(.bus_op(BusOpWrite), .byte_len(byte_len));
+      byte_len = 0;
+      `DV_CHECK_MEMBER_RANDOMIZE_FATAL(tx_fifo_access_dly)
+      cfg.clk_rst_vif.wait_clks(tx_fifo_access_dly);
     end
     // wait for all accesses to complete
     wait_no_outstanding_access();
@@ -277,14 +292,33 @@ class spi_host_base_vseq extends cip_base_vseq #(
     check_status_and_clear_intrs();
   endtask : write_tx_data
 
-  virtual task send_tl_access(bit [TL_AW-1:0] addr, bit [TL_DW-1:0] data, bit write,
+  virtual task send_tl_access(bit [TL_AW-1:0]  addr,
+                              bit [TL_DW-1:0]  data,
+                              bit              write,
                               bit [TL_DBW-1:0] mask = {TL_DBW{1'b1}},
-                              bit blocking = $urandom_range(0, 1));
+                              bit              blocking = $urandom_range(0, 1));
     tl_access(.addr(addr), .write(write), .data(data), .mask(mask), .blocking(blocking));
-    `uvm_info(`gfn, $sformatf("\n  base_vseq, %s to address 0x%0x, data: 0x%0x, mask %b, blk %b",
-          write ? "write" : "read", data, addr, mask, blocking), UVM_LOW)
+    `uvm_info(`gfn, "\n  base_vseq, send_tl_access", UVM_LOW)
+    `uvm_info(`gfn, $sformatf("\n    %s to addr 0x%0x, data: 0x%0x, mask %b, blocking %b",
+        write ? "write" : "read", addr, data, mask, blocking), UVM_LOW)
   endtask : send_tl_access
 
+  virtual task send_spi_seq(bus_op_e bus_op, int byte_len);
+    spi_device_seq m_spi_device_seq;
+
+    if (bus_op == BusOpWrite) begin
+      `uvm_create_on(m_spi_device_seq, p_sequencer.spi_host_sequencer_h)
+      `uvm_info(`gfn, $sformatf("\n  base_vseq: create m_spi_device_seq"), UVM_LOW)
+      m_spi_device_seq.item_type = SpiTransWrite;
+      m_spi_device_seq.byte_len = byte_len;
+      `uvm_info(`gfn, $sformatf("\n  base_vseq: item_type %s",
+          m_spi_device_seq.item_type.name()), UVM_LOW)
+      `uvm_info(`gfn, $sformatf("\n  base_vseq: byte_len %0d",
+          m_spi_device_seq.item_type), UVM_LOW)
+      `uvm_send(m_spi_device_seq);
+    end
+  endtask : send_spi_seq
+  
   virtual task read_rx_data();
     bit [TL_DW-1:0] rx_data;
     bit [TL_AW-1:0] fifo_waddr;
@@ -343,14 +377,14 @@ class spi_host_base_vseq extends cip_base_vseq #(
       super.wait_for_reset(reset_kind, wait_for_assert, wait_for_deassert);
       begin
         if (wait_for_assert) begin
-          `uvm_info(`gfn, "waiting for core rst_n assertion...", UVM_MEDIUM)
+          `uvm_info(`gfn, "\n  base_vseq, waiting for core rst_n assertion...", UVM_MEDIUM)
           @(negedge cfg.clk_rst_core_vif.rst_n);
         end
         if (wait_for_deassert) begin
-          `uvm_info(`gfn, "waiting for core rst_n de-assertion...", UVM_MEDIUM)
+          `uvm_info(`gfn, "\n  base_vseq, waiting for core rst_n de-assertion...", UVM_MEDIUM)
           @(posedge cfg.clk_rst_core_vif.rst_n);
         end
-        `uvm_info(`gfn, "core wait_for_reset done", UVM_LOW)
+        `uvm_info(`gfn, "\n  base_vseq, core wait_for_reset done", UVM_LOW)
       end
     join
   endtask : wait_for_reset
@@ -378,11 +412,13 @@ class spi_host_base_vseq extends cip_base_vseq #(
 
   // wait until fifos has available entries to read/write
   virtual task wait_for_fifos_available(spi_host_fifo_e fifo = AllFifos);
-    if (fifo == TxFifo || TxFifo == AllFifos) begin
+    if (fifo == TxFifo || fifo == AllFifos) begin
       csr_spinwait(.ptr(ral.status.txfull), .exp_data(1'b0));
+      `uvm_info(`gfn, $sformatf("\n  base_vseq: tx_fifo is not full",), UVM_LOW)
     end
-    if (fifo == RxFifo || TxFifo == AllFifos) begin
+    if (fifo == RxFifo || fifo == AllFifos) begin
       csr_spinwait(.ptr(ral.status.rxfull), .exp_data(1'b0));
+      `uvm_info(`gfn, $sformatf("\n  base_vseq: rx_fifo is not full",), UVM_LOW)
     end
   endtask
 
@@ -402,11 +438,11 @@ class spi_host_base_vseq extends cip_base_vseq #(
   endfunction : update_spi_agent_regs
 
   // print the content of spi_regs[channel]
-  virtual function print_spi_host_regs(uint en_print = 1);
+  virtual function void print_spi_host_regs(uint en_print = 1);
     if (en_print) begin
       string str = "";
 
-      str = {str, "\n  channel infor:"};
+      str = {str, "\n  base_vseq, channel infor:"};
       str = {str, $sformatf("\n    csid         %0d", spi_regs.csid)};
       str = {str, $sformatf("\n    speed        %s",  spi_regs.speed.name())};
       str = {str, $sformatf("\n    direction    %s",  spi_regs.direction.name())};

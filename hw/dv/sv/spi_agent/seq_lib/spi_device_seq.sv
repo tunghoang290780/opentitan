@@ -6,48 +6,31 @@
 // Device sequence
 // --------------------
 class spi_device_seq extends spi_base_seq;
-
   `uvm_object_utils(spi_device_seq)
   `uvm_object_new
 
-  spi_item req_q[$];
-
-  // data to be sent
-  rand bit [7:0] data[$];
-
-  // constrain size of data sent / received to be at most 64kB
-  constraint data_size_c {
-    data.size() inside {[1:65536]};
-  }
+  spi_trans_type_e item_type;
+  uint byte_len = 0;
 
   virtual task body();
-    // if mode = Dual/Quad then adopting re-active slave agent (half duplex)
-    if (cfg.spi_mode != "Standard") begin
-      fork
-        forever begin
-          spi_item  req;
-          p_sequencer.req_analysis_fifo.get(req);
-          req_q.push_back(req);
-        end
-        forever begin
-          spi_item  rsp;
-          wait(req_q.size > 0);
-          rsp = req_q.pop_front();
-          start_item(rsp);
-          finish_item(rsp);
-        end
-      join
-    end else begin
-    // if mode = Single then adopt full duplex
+    if (item_type inside {SpiTransWrite, SpiTransRead, SpiTransIdle} && byte_len > 0) begin
+      // if mode = Dual/Quad then adopting re-active slave agent (half duplex)
+      `uvm_info(`gfn, $sformatf("\n  spi_device_seq: spi_mode %s",   cfg.spi_mode.name()), UVM_LOW)
+      `uvm_info(`gfn, $sformatf("\n  spi_device_seq: item_type %s",  item_type.name()), UVM_LOW)
+      `uvm_info(`gfn, $sformatf("\n  spi_device_seq: byte_len %0d", byte_len), UVM_LOW)
+      `uvm_info(`gfn, $sformatf("\n    full duplex: %s",  cfg.spi_mode.name()), UVM_LOW)
       req = spi_item::type_id::create("req");
+      `uvm_info(`gfn, $sformatf("\n    req_item created"), UVM_LOW)
       start_item(req);
+      `uvm_info(`gfn, $sformatf("\n    req_item started"), UVM_LOW)
       `DV_CHECK_RANDOMIZE_WITH_FATAL(req,
-                                     item_type == SpiTransNormal;
-                                     data.size() == local::data.size();
-                                     foreach (data[i]) {
-                                       data[i] == local::data[i];
-                                     })
+                                       item_type   == local::item_type;
+                                       byte_len    == local::byte_len;
+                                       data.size() == local::byte_len;
+                                    )
+      `uvm_info(`gfn, $sformatf("\n    req_item is sent to device driver \n%0s", req.sprint()), UVM_LOW)
       finish_item(req);
+      `uvm_info(`gfn, $sformatf("\n    req_item finished"), UVM_LOW)
       get_response(rsp);
     end
   endtask : body

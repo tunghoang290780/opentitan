@@ -18,9 +18,14 @@ package spi_agent_pkg;
 
   // transaction type
   typedef enum {
+    // Host
     SpiTransNormal,    // normal SPI trans
     SpiTransSckNoCsb,  // bad SPI trans with clk but no sb
-    SpiTransCsbNoScb   // bad SPI trans with csb but no clk
+    SpiTransCsbNoScb,  // bad SPI trans with csb but no clk
+    // Device
+    SpiTransWrite,
+    SpiTransRead,
+    SpiTransIdle
   } spi_trans_type_e;
 
   // sck edge type - used by driver and monitor

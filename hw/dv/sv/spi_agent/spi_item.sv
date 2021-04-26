@@ -4,9 +4,13 @@
 
 class spi_item extends uvm_sequence_item;
 
+  // hold number of data bytes for rx/tx transaction
+  rand uint byte_len;
+  // hold transaction type
   rand spi_trans_type_e item_type;
+
   // byte of data sent or received
-  rand bit [7:0] data[$];
+  rand bit [7:0] data[4][$];
 
   rand uint dummy_clk_cnt;
   rand uint dummy_sck_length_ns;
@@ -26,11 +30,12 @@ class spi_item extends uvm_sequence_item;
 
   `uvm_object_utils_begin(spi_item)
     `uvm_field_enum(spi_trans_type_e, item_type, UVM_DEFAULT)
-    `uvm_field_queue_int(data,              UVM_DEFAULT)
-    `uvm_field_int(dummy_clk_cnt,           UVM_DEFAULT)
-    `uvm_field_int(dummy_sck_length_ns,     UVM_DEFAULT)
+    `uvm_field_queue_int(data,          UVM_DEFAULT)
+    `uvm_field_int(dummy_clk_cnt,       UVM_DEFAULT)
+    `uvm_field_int(dummy_sck_length_ns, UVM_DEFAULT)
+    `uvm_field_int(byte_len,            UVM_DEFAULT)
   `uvm_object_utils_end
 
   `uvm_object_new
 
-endclass
+endclass : spi_item

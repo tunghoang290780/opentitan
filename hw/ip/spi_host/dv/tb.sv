@@ -22,10 +22,10 @@ module tb;
   wire [NUM_MAX_INTERRUPTS-1:0] interrupts;
 
   lc_tx_t           scanmode_i;
-  wire              cio_sck_o;
-  wire              cio_sck_en_o;
-  wire  [NumCS-1:0] cio_csb_o;
-  wire  [NumCS-1:0] cio_csb_en_o;
+  logic             cio_sck_o;
+  logic             cio_sck_en_o;
+  logic [NumCS-1:0] cio_csb_o;
+  logic [NumCS-1:0] cio_csb_en_o;
   logic [3:0]       cio_sd_o;
   logic [3:0]       cio_sd_en_o;
   logic [3:0]       cio_sd_i;
@@ -66,18 +66,12 @@ module tb;
   );
 
   assign spi_if.sck = (cio_sck_en_o) ? cio_sck_o : 1'bz;
-  assign cio_sd_i   = spi_if.sio;
-  always_comb begin
-    for (int i = 0; i < 4; i++) begin
-      if (cio_sd_en_o[i]) begin
-        spi_if.sio[i] = cio_sd_o[i];
-      end
-      if (i < NumCS) begin
-        spi_if.csb[i] = (cio_csb_en_o[i]) ? cio_csb_o[i] : 1'b1;
-      end else begin
-        spi_if.csb[i] = 1'b1;
-      end
-    end
+
+  for (genvar i = 0; i < 4; i++) begin : gen_tri_state
+    bufif1 ts1(spi_if.sio[i], cio_sd_o[i], cio_sd_en_o[i]);
+    bufif1 ts0(cio_sd_i[i], spi_if.sio[i], cio_sd_en_o[i]);
+
+    assign spi_if.csb[i] = (i < NumCS && cio_csb_en_o[i]) ? cio_csb_o[i] : 1'b1;
   end
 
   assign interrupts[SpiHostError] = intr_error;
