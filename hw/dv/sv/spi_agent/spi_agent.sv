@@ -24,9 +24,9 @@ class spi_agent extends dv_base_agent#(
     end
 
     if (cfg.if_mode == dv_utils_pkg::Device) begin
-      `uvm_info(`gfn, "spi agent is configure in Device mode", UVM_HIGH)
+      `uvm_info(`gfn, "spi agent is configure in Device mode", UVM_DEBUG)
     end else begin
-      `uvm_info(`gfn, "spi agent is configure in Host mode", UVM_HIGH)
+      `uvm_info(`gfn, "spi agent is configure in Host mode", UVM_DEBUG)
     end
   endfunction : build_phase
 

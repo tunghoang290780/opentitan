@@ -14,18 +14,13 @@ package spi_agent_pkg;
 
   // parameter
   parameter uint MAX_CS = 4;      // set to the maximum valid value
-  parameter uint BYTE_ORDER = 1;  // must be same as ByteOrder defined in spi_host_reg_pkg
 
   // transaction type
   typedef enum {
-    // Host
+    // device dut
     SpiTransNormal,    // normal SPI trans
-    SpiTransSckNoCsb,  // bad SPI trans with clk but no sb
-    SpiTransCsbNoScb,  // bad SPI trans with csb but no clk
-    // Device
-    SpiTransWrite,
-    SpiTransRead,
-    SpiTransIdle
+    SpiTransSckNoCsb,  // bad SPI trans with sck but no csb
+    SpiTransCsbNoSck   // bad SPI trans with csb but no sck
   } spi_trans_type_e;
 
   // sck edge type - used by driver and monitor
@@ -37,7 +32,7 @@ package spi_agent_pkg;
   } sck_edge_type_e;
 
   // spi mode
-  typedef enum logic [1:0] {
+  typedef enum bit [1:0] {
     Standard = 2'b00,  // Full duplex, tx: sio[0], rx: sio[1]
     Dual     = 2'b01,  // Half duplex, tx and rx: sio[1:0]
     Quad     = 2'b10,  // Half duplex, tx and rx: sio[3:0]
@@ -45,7 +40,7 @@ package spi_agent_pkg;
   } spi_mode_e;
 
   // spi direction
-  typedef enum logic [1:0] {
+  typedef enum bit [1:0] {
     Dummy    = 2'b00,
     RxOnly   = 2'b01,
     TxOnly   = 2'b10,

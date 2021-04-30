@@ -73,7 +73,7 @@ class spi_host_driver extends spi_driver;
       case (req.item_type)
         SpiTransNormal:   drive_normal_item();
         SpiTransSckNoCsb: drive_sck_no_csb_item();
-        SpiTransCsbNoScb: drive_csb_no_sck_item();
+        SpiTransCsbNoSck: drive_csb_no_sck_item();
       endcase
       `uvm_info(`gfn, "spi_host_driver: item sent", UVM_HIGH)
       seq_item_port.item_done(rsp);

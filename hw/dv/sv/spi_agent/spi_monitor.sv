@@ -9,8 +9,8 @@ class spi_monitor extends dv_base_monitor#(
   );
   `uvm_component_utils(spi_monitor)
 
-  spi_item host_item;
-  spi_item device_item;
+  local spi_item host_item;
+  local spi_item device_item;
 
   // Analysis port for the collected transfer.
   uvm_analysis_port #(spi_item) host_analysis_port;
@@ -35,11 +35,67 @@ class spi_monitor extends dv_base_monitor#(
 
     forever begin
       @(negedge cfg.vif.csb);
-      collect_curr_trans();
+      if (cfg.if_mode == Host)   collect_trans_host_mode();
+      if (cfg.if_mode == Device) collect_trans_device_mode();
     end
   endtask : collect_trans
 
-  virtual protected task collect_curr_trans();
+  // TODO: this task is temporarily added to verify spi_host
+  // there should be a clean-up step later
+  virtual protected task collect_trans_device_mode();
+    bit host_sio_bits[], device_sio_bits[];
+    bit host_bits_q[$],  device_bits_q[$];
+
+    fork
+      begin: isolation_thread
+        fork
+          begin: csb_deassert_thread
+            wait(cfg.vif.csb[0] == 1'b1);
+          end
+          begin: sample_thread
+            // for mode 1 and 3, get the leading edges out of the way
+            cfg.wait_sck_edge(LeadingEdge);
+            forever begin
+              bit [7:0] host_byte;    // from sio
+              bit [7:0] device_byte;  // from sio
+
+              // wait for the sampling edge
+              cfg.wait_sck_edge(SamplingEdge);
+              // check sio not x or z
+              monitor_check();
+              // sample tx bits
+              if (cfg.direction inside {TxOnly, Bidir}) begin
+                host_sio_bits.delete();
+                cfg.vif.get_data_from_sio(cfg.spi_mode, host_sio_bits);
+                host_bits_q = {>> {host_bits_q, host_sio_bits}};
+                if (host_bits_q.size() == 8) begin // get complete byte
+                  host_byte = {>> 8 {host_bits_q}};
+                  host_item.data.push_back(host_byte);
+                  send_host_item_to_scb();
+                  host_bits_q.delete();
+                end
+              end
+              // sample rx bits
+              if (cfg.direction inside {RxOnly, Bidir}) begin
+                device_sio_bits.delete();
+                cfg.vif.get_data_from_sio(cfg.spi_mode, device_sio_bits);
+                device_bits_q = {>> {device_bits_q, device_sio_bits}};
+                if (host_bits_q.size() == 8) begin  // get complete byte
+                  device_byte = {>> 8 {device_bits_q}};
+                  device_item.data.push_back(device_byte);
+                  send_device_item_to_scb();
+                  device_bits_q.delete();
+                end
+              end
+            end // forever
+          end: sample_thread
+        join_any
+        disable fork;
+      end
+    join
+  endtask: collect_trans_device_mode
+
+  virtual protected task collect_trans_host_mode();
     fork
       begin: isolation_thread
         fork
@@ -78,9 +134,9 @@ class spi_monitor extends dv_base_monitor#(
               // sending transactions when collect a word data
               if (host_item.data.size == cfg.num_bytes_per_trans_in_mon &&
                   device_item.data.size == cfg.num_bytes_per_trans_in_mon) begin
-                `uvm_info(`gfn, $sformatf("spi_monitor: host packet:\n%0s", host_item.sprint()),
+                `uvm_info(`gfn, $sformatf("\n  monitor, host packet:\n%0s", host_item.sprint()),
                           UVM_HIGH)
-                `uvm_info(`gfn, $sformatf("spi_monitor: device packet:\n%0s", device_item.sprint()),
+                `uvm_info(`gfn, $sformatf("\n  monitor, device packet:\n%0s", device_item.sprint()),
                           UVM_HIGH)
                 host_analysis_port.write(host_item);
                 device_analysis_port.write(device_item);
@@ -93,12 +149,72 @@ class spi_monitor extends dv_base_monitor#(
         disable fork;
       end
     join
-  endtask : collect_curr_trans
+  endtask : collect_trans_host_mode
+
+  virtual task monitor_check();
+    if (cfg.en_monitor_checks) begin
+      unique case (cfg.spi_mode)
+        Standard: begin
+          if (cfg.direction inside {TxOnly, Bidir, Dummy}) begin
+            `DV_CHECK_CASE_NE(cfg.vif.sio[0], 1'bx)
+          end
+          if (cfg.direction inside {RxOnly, Bidir, Dummy}) begin
+            `DV_CHECK_CASE_NE(cfg.vif.sio[1], 1'bx)
+          end
+        end
+        Dual: begin
+          if (cfg.direction inside {TxOnly, RxOnly, Dummy}) begin
+            `DV_CHECK_CASE_NE(cfg.vif.sio[1:0], 2'bxx)
+          end
+        end
+        Quad: begin
+          if (cfg.direction inside {TxOnly, RxOnly, Dummy}) begin
+            `DV_CHECK_CASE_NE(cfg.vif.sio[3:0], 4'bxxxx)
+          end
+        end
+      endcase
+    end
+  endtask : monitor_check
+
+  virtual task send_host_item_to_scb(int do_padding = 0);
+    int size = host_item.data.size();
+
+    if (size == cfg.len + 1) begin
+      // pad zero bytes for word-level data
+      while (do_padding && host_item.data.size() % 4 != 0) begin
+        host_item.data.push_back(8'h00);
+      end
+      host_item.direction = cfg.direction;
+      host_item.spi_mode  = cfg.spi_mode;
+      host_item.byte_len  = host_item.data.size();
+      host_analysis_port.write(host_item);
+      `uvm_info(`gfn, $sformatf("\n  monitor, send host_item to scb\n%0s",
+          host_item.sprint()), UVM_LOW)
+      host_item = spi_item::type_id::create("host_item", this);
+    end
+  endtask: send_host_item_to_scb
+
+  virtual task send_device_item_to_scb(int do_padding = 0);
+    int size = device_item.data.size();
+
+    if (size == cfg.len + 1) begin
+      while (do_padding && device_item.data.size() % 4 != 0) begin
+        device_item.data.push_back(8'h00);
+      end
+      device_item.direction = cfg.direction;
+      device_item.spi_mode  = cfg.spi_mode;
+      device_item.byte_len  = device_item.data.size();
+      device_analysis_port.write(device_item);
+      `uvm_info(`gfn, $sformatf("\n  monitor, send device_item to scb\n%0s",
+          device_item.sprint()), UVM_LOW)
+      device_item = spi_item::type_id::create("device_item", this);
+    end
+  endtask : send_device_item_to_scb
 
   virtual task monitor_ready_to_end();
     forever begin
       @(cfg.vif.csb);
-      ok_to_end = !cfg.vif.csb;
+      ok_to_end = &cfg.vif.csb;
     end
   endtask : monitor_ready_to_end
 

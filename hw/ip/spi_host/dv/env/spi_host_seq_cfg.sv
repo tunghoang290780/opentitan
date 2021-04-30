@@ -21,7 +21,7 @@ class spi_host_seq_cfg extends uvm_object;
   uint host_spi_min_clkdiv            = 0;
   uint host_spi_max_clkdiv            = 15;
   uint host_spi_min_len               = 0;
-  uint host_spi_max_len               = 8;
+  uint host_spi_max_len               = 16;
   uint host_spi_min_dly               = 0;
   uint host_spi_max_dly               = 5;
   uint host_spi_max_rxwm              = SPI_HOST_RX_DEPTH;

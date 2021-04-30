@@ -28,5 +28,13 @@ interface spi_if (
   task automatic wait_for_dly(int dly);
     repeat (dly) @(posedge sck);
   endtask : wait_for_dly
-  
+
+  task automatic get_data_from_sio(ref spi_mode_e mode, output bit sio_bits[]);
+    unique case (mode)
+      Standard: sio_bits = {>> 1 {sio[0]}};
+      Dual:     sio_bits = {>> 1 {sio[1:0]}};
+      Quad:     sio_bits = {>> 1 {sio[3:0]}};
+    endcase
+  endtask : get_data_from_sio
+
 endinterface : spi_if

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // smoke test vseq
-class spi_host_smoke_vseq extends spi_host_base_vseq;
+class spi_host_smoke_vseq extends spi_host_tx_rx_vseq;
   `uvm_object_utils(spi_host_smoke_vseq)
   `uvm_object_new
 

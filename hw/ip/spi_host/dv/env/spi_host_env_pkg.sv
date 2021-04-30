@@ -22,8 +22,8 @@ package spi_host_env_pkg;
   parameter uint SPI_HOST_RX_DEPTH    = spi_host_reg_pkg::RxDepth;
   parameter bit  SPI_HOST_BYTEORDER   = spi_host_reg_pkg::ByteOrder;
   parameter uint SPI_HOST_BLOCK_AW    = spi_host_reg_pkg::BlockAw;
-  parameter uint SPI_HOST_FIFO_BASE   = spi_host_reg_pkg::SPI_HOST_DATA_OFFSET;
-  parameter uint SPI_HOST_FIFO_END    = (SPI_HOST_FIFO_BASE - 1) +
+  parameter uint SPI_HOST_FIFO_START  = spi_host_reg_pkg::SPI_HOST_DATA_OFFSET;
+  parameter uint SPI_HOST_FIFO_END    = (SPI_HOST_FIFO_START - 1) +
                                         spi_host_reg_pkg::SPI_HOST_DATA_SIZE;
 
   // macro includes
@@ -45,6 +45,17 @@ package spi_host_env_pkg;
 
   // spi config
   typedef struct {
+    // configopts register fields
+    rand bit        cpol[SPI_HOST_NUM_CS-1:0];
+    rand bit        cpha[SPI_HOST_NUM_CS-1:0];
+    rand bit        fullcyc[SPI_HOST_NUM_CS-1:0];
+    rand bit [3:0]  csnlead[SPI_HOST_NUM_CS-1:0];
+    rand bit [3:0]  csntrail[SPI_HOST_NUM_CS-1:0];
+    rand bit [3:0]  csnidle[SPI_HOST_NUM_CS-1:0];
+    rand bit [15:0] clkdiv[SPI_HOST_NUM_CS-1:0];
+  } spi_host_configopts_t;
+
+  typedef struct {
     // csid register
     rand bit [31:0] csid;
     // control register fields
@@ -64,7 +75,7 @@ package spi_host_env_pkg;
     rand spi_mode_e speed;
     rand bit        csaat;
     rand bit [8:0]  len;
-  } spi_regs_t;
+  } spi_host_regs_t;
 
   // functions
 

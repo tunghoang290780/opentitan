@@ -27,11 +27,13 @@ class spi_host_env_cfg extends cip_base_env_cfg #(.RAL_T(spi_host_reg_block));
     // setup agent in Device mode
     m_spi_agent_cfg.if_mode = Device;
     // drained time of phase_ready_to_end
-    m_spi_agent_cfg.ok_to_end_delay_ns = 8000;
+    m_spi_agent_cfg.ok_to_end_delay_ns = 5000;
     // create req_analysis_fifo for re-active slave agent
     m_spi_agent_cfg.has_req_fifo = 1'b1;
     // default spi_mode
     m_spi_agent_cfg.spi_mode = Standard;
+    // default byte order
+    m_spi_agent_cfg.byte_order = SPI_HOST_BYTEORDER;
 
     // create the seq_cfg
     seq_cfg = spi_host_seq_cfg::type_id::create("seq_cfg");
@@ -63,5 +65,47 @@ class spi_host_env_cfg extends cip_base_env_cfg #(.RAL_T(spi_host_reg_block));
     end
     return clk_core_mhz;
   endfunction : get_clk_core_freq
-  
+
+  // set reg/mreg using name and index
+  virtual function dv_base_reg get_dv_base_reg_by_name(string csr_name, int csr_idx = -1);
+    string  reg_name;
+    uvm_reg csr;
+
+    reg_name = (csr_idx == -1) ? csr_name : $sformatf("%s_%0d", csr_name, csr_idx);
+    csr  = ral.get_reg_by_name(reg_name);
+    `DV_CHECK_NE_FATAL(csr, null, reg_name)
+    `downcast(get_dv_base_reg_by_name, csr)
+  endfunction
+
+  // set field of reg/mreg using name and index, need to call csr_update after setting
+  virtual function void set_dv_base_reg_field_by_name(dv_base_reg csr_reg,
+                                                      string      csr_field,
+                                                      uint        value,
+                                                      int         csr_idx = -1);
+    uvm_reg_field reg_field;
+    string reg_name;
+
+    reg_name = (csr_idx == -1) ? csr_field : $sformatf("%s_%0d", csr_field, csr_idx);
+    reg_field = csr_reg.get_field_by_name(reg_name);
+    `DV_CHECK_NE_FATAL(reg_field, null, reg_name)
+    reg_field.set(value);
+  endfunction : set_dv_base_reg_field_by_name
+
+  // set field value of reg/mreg using name and index
+  virtual function uvm_reg_data_t get_field_val_by_name(string csr_field,
+                                                        string csr_reg,
+                                                        int    csr_idx,
+                                                        uvm_reg_data_t value);
+    uvm_reg_field  reg_field;
+    uvm_reg        csr;
+    string         field_name;
+
+    field_name = (csr_idx == -1) ? csr_field : $sformatf("%s_%0d", csr_field, csr_idx);
+    csr  = ral.get_reg_by_name(csr_reg);
+    `DV_CHECK_NE_FATAL(csr, null, csr_reg)
+    reg_field = csr.get_field_by_name(field_name);
+    `DV_CHECK_NE_FATAL(reg_field, null, field_name)
+    return get_field_val(reg_field, value);
+  endfunction : get_field_val_by_name
+
 endclass : spi_host_env_cfg
