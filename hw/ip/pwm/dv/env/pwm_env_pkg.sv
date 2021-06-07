@@ -12,6 +12,7 @@ package pwm_env_pkg;
   import cip_base_pkg::*;
   import dv_base_reg_pkg::*;
   import csr_utils_pkg::*;
+  import pwm_monitor_pkg::*;
   import pwm_reg_pkg::*;
   import pwm_ral_pkg::*;
 
@@ -72,7 +73,6 @@ package pwm_env_pkg;
   endfunction : get_pwm_mode
 
   // package sources
-  `include "pwm_item.sv"
   `include "pwm_seq_cfg.sv"
   `include "pwm_env_cfg.sv"
   `include "pwm_env_cov.sv"

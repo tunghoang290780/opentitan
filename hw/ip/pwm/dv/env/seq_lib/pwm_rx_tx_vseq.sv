@@ -24,6 +24,7 @@ class pwm_rx_tx_vseq extends pwm_base_vseq;
         run_pwm_channels();     // run then stop channels
       end
     end
+    program_pwm_invert_regs(Disable);
   endtask : body
 
   // program pwm mode (including programming duty_cycle and pwm_param multiregs)

@@ -3,27 +3,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
 class pwm_env_cfg extends cip_base_env_cfg #(.RAL_T(pwm_reg_block));
-
   `uvm_object_utils_begin(pwm_env_cfg)
   `uvm_object_utils_end
 
   `uvm_object_new
 
-  // config
+  // configs
+  rand pwm_monitor_cfg#(PWM_NUM_CHANNELS) m_pwm_monitor_cfg;
   pwm_seq_cfg seq_cfg;
   // virtual ifs
   virtual clk_rst_if clk_rst_core_vif;
-  virtual pwm_if#(PWM_NUM_CHANNELS) pwm_vif;
   // variables
   uint ok_to_end_delay_ns = 3000;    // drained time of phase_ready_to_end
-  bit en_monitor = 1'b1;             // enable monitor
   bit [31:0] num_pulses;             // number of generated pulse
-  bit [PWM_NUM_CHANNELS-1:0] invert; // invert pulse
   int core_clk_freq_mhz;             // core clock freq
 
   virtual function void initialize(bit [31:0] csr_base_addr = '1);
     list_of_alerts = pwm_env_pkg::LIST_OF_ALERTS;
     super.initialize(csr_base_addr);
+
+    // create pwm_agent_cfg
+    m_pwm_monitor_cfg = pwm_monitor_cfg#(PWM_NUM_CHANNELS)::type_id::create("m_pwm_monitor_cfg");
+    m_pwm_monitor_cfg.if_mode      = Device;
+    m_pwm_monitor_cfg.en_cov       = 1'b0; // disable cov
+    m_pwm_monitor_cfg.is_active    = 1'b0; // disable driver and sequencer
+    m_pwm_monitor_cfg.has_req_fifo = 1'b0; // disable monitor.req_analysis_port
+    m_pwm_monitor_cfg.has_rsp_fifo = 1'b0; // disable monitor.rsp_analysis_port
 
     // create seq_cfg
     seq_cfg = pwm_seq_cfg::type_id::create("seq_cfg");

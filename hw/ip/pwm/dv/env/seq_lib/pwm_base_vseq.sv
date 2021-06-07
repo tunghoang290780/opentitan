@@ -134,8 +134,12 @@ class pwm_base_vseq extends cip_base_vseq #(
     program_pwm_cfg_counters(Disable);
   endtask : run_pwm_channels
 
-  virtual task program_pwm_invert_regs();
-    csr_wr(.ptr(ral.invert), .value(pwm_regs.invert));
+  virtual task program_pwm_invert_regs(pwm_status_e status = Enable);
+    if (status == Enable) begin
+      csr_wr(.ptr(ral.invert), .value(pwm_regs.invert));
+    end else begin
+      csr_wr(.ptr(ral.invert), .value({PWM_NUM_CHANNELS{1'b0}}));
+    end
   endtask : program_pwm_invert_regs
 
   virtual task program_pwm_duty_cycle_regs(int channel);
@@ -197,8 +201,9 @@ class pwm_base_vseq extends cip_base_vseq #(
     // update pwm_cfg
     cfg.num_pulses = pwm_regs.num_pulses;
     // update agent_cfg
-    cfg.invert = pwm_regs.invert;
-    `uvm_info(`gfn, $sformatf("\n  base_vseq: cfg.invert %b", cfg.invert), UVM_LOW)
+    cfg.m_pwm_monitor_cfg.invert = pwm_regs.invert;
+    `uvm_info(`gfn, $sformatf("\n  base_vseq: cfg.invert %b",
+        cfg.m_pwm_monitor_cfg.invert), UVM_LOW)
     // print pwm_regs for enabled channels
     for (int i = 0; i < PWM_NUM_CHANNELS; i++) begin
       cfg.print_pwm_regs("base_vseq", pwm_regs, i);
