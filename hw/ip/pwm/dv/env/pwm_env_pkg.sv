@@ -26,12 +26,13 @@ package pwm_env_pkg;
   // alerts
   parameter uint NUM_ALERTS = 1;
   parameter string LIST_OF_ALERTS[] = {"fatal_fault"};
-  
+
   // datatype
   typedef enum bit [1:0] {
     Standard   = 2'b00,
     Blinking   = 2'b01,
-    Heartbeat  = 2'b11
+    Heartbeat  = 2'b11,
+    Allmodes   = 2'b10
   } pwm_mode_e;
 
   typedef enum bit {
@@ -43,8 +44,9 @@ package pwm_env_pkg;
     // cfg reg
     rand bit [3:0]    dc_resn;
     rand bit [26:0]   clk_div;
+    bit               cntr_en;
     // en reg
-    rand bit [PWM_NUM_CHANNELS-1:0]         en;
+    rand bit [PWM_NUM_CHANNELS-1:0]         pwm_en;
     // invert multireg
     rand bit [PWM_NUM_CHANNELS-1:0]         invert;
     // param multireg
@@ -59,17 +61,17 @@ package pwm_env_pkg;
     rand bit [PWM_NUM_CHANNELS-1:0][15:0]   blink_param_y;
     // mode multireg
     rand pwm_mode_e [PWM_NUM_CHANNELS-1:0]  pwm_mode;
-    rand bit [31:0]                         num_pulses;
     // derived params
-    bit  [27:0] beat_cycle;                       // 2**(clk_div+1) core cycles
-    bit  [16:0] pulse_cycle;                      // 2**(dc_resn+1) beat cycles
+    bit  [27:0] beat_cycle;   // 2**(clk_div+1) core cycles
+    bit  [16:0] pulse_cycle;  // 2**(dc_resn+1) beat cycles
   } pwm_regs_t;
 
   // function
-  function automatic pwm_mode_e get_pwm_mode(bit [1:0] data);
-    return (data == 2'b10) ? Blinking  :
-           (data == 2'b11) ? Heartbeat :
-                             Standard;
+  function automatic pwm_mode_e get_pwm_mode(bit [1:0] mode);
+    return (mode == 2'b10) ? Blinking  :
+           (mode == 2'b11) ? Heartbeat :
+           (mode == 2'b00) ? Standard  :
+                             Allmodes;
   endfunction : get_pwm_mode
 
   // package sources

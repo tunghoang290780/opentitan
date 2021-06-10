@@ -19,13 +19,18 @@ class pwm_seq_cfg extends uvm_object;
   uint pwm_max_num_runs          = 5;
 
   // knobs for pwm channels
-  uint pwm_min_clk_div           = 0;
-  uint pwm_max_clk_div           = 16;
-  uint pwm_min_dc_resn           = 0;
-  uint pwm_max_dc_resn           = 2;
-  uint pwm_min_num_pulses        = 1;
-  uint pwm_max_num_pulses        = 10;
+  uint pwm_min_clk_div           = 2;
+  uint pwm_max_clk_div           = 5;
+  uint pwm_min_dc_resn           = 1;
+  uint pwm_max_dc_resn           = 4;
+  uint pwm_min_param             = 4;
+  uint pwm_max_param             = 10;
+  // derive params
+  uint pwm_min_num_pulses        = 2 * pwm_min_param;
+  uint pwm_max_num_pulses        = 4 * pwm_max_param;
 
-  // ratio (<1) between minimum clk_core (core clock) and clk (bus clock)
-  real pwm_core_clk_ratio        = 0.5;
+  // test knobs
+  pwm_mode_e pwm_run_mode        = Allmodes;
+  int        pwm_run_channel     = PWM_NUM_CHANNELS;
+
 endclass : pwm_seq_cfg

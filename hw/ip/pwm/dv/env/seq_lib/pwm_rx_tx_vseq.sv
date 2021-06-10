@@ -7,30 +7,27 @@ class pwm_rx_tx_vseq extends pwm_base_vseq;
   `uvm_object_new
 
   virtual task body();
-    `uvm_info(`gfn, "\n--> start of sequence", UVM_LOW)
-    `uvm_info(`gfn, $sformatf("\n--> require simulating %0d transactions", num_trans), UVM_LOW)
-    initialization();
+    `uvm_info(`gfn, "\n--> Start body task", UVM_DEBUG)
+    `uvm_info(`gfn, $sformatf("\n--> SIMULATE %0d transactions", num_trans), UVM_DEBUG)
+    initialize_pwm();
     for (int i = 0; i < num_trans; i++) begin
       `uvm_info(`gfn, $sformatf("\n\n--> start transaction %0d/%0d", i + 1, num_trans), UVM_LOW)
       `DV_CHECK_RANDOMIZE_FATAL(this)
       // program single registers out of the loop
-      if (!cfg.under_reset) begin
-        program_pwm_cfg_reg();
-        // program multi registers
-        program_channel_regs();
-        program_pwm_invert_regs();
-        update_pwm_config();
-        start_pwm_channels();   // start channels
-        run_pwm_channels();     // run then stop channels
-      end
+      wait(!cfg.under_reset);   // wait for out of reset
+      program_pwm_cfg_regs();   // program config shared register
+      program_pwm_mode_regs();  // program multi registers
+      start_pwm_channels();     // start channels
+      run_pwm_channels();       // run then stop channels
+      `uvm_info(`gfn, $sformatf("\n--> finish transaction %0d/%0d\n", i + 1, num_trans), UVM_LOW)
     end
-    program_pwm_invert_regs(Disable);
+    `uvm_info(`gfn, "\n--> Finish body task", UVM_DEBUG)
   endtask : body
 
   // program pwm mode (including programming duty_cycle and pwm_param multiregs)
-  virtual task program_channel_regs();
+  virtual task program_pwm_mode_regs();
     for (int channel = 0; channel < PWM_NUM_CHANNELS; channel++) begin
-      if (pwm_regs.en[channel] == Enable) begin
+      if (pwm_regs.pwm_en[channel] == Enable) begin
         dv_base_reg base_reg;
 
         // program duty_cycle_a and duty_cycle_b in same cycle
@@ -39,43 +36,38 @@ class pwm_rx_tx_vseq extends pwm_base_vseq;
         program_pwm_blink_param_regs(channel);
 
         `uvm_info(`gfn, $sformatf("\n  rxtx_vseq: program pwm_param[%0d] to mode %s",
-            channel, pwm_regs.pwm_mode[channel].name()), UVM_LOW)
+            channel, pwm_regs.pwm_mode[channel].name()), UVM_DEBUG)
         base_reg = get_dv_base_reg_by_name("pwm_param", channel);
         // program pwm_mode
+        `uvm_info(`gfn, $sformatf("\n  rxtx_vseq: programm channel %0d to mode %s",
+            channel, pwm_regs.pwm_mode[channel].name()), UVM_DEBUG)
         case (pwm_regs.pwm_mode[channel])
           Blinking: begin
             // enable blink_en, disable htbt_en in same cycle
-            `uvm_info(`gfn, $sformatf("\n  rxtx_vseq: Blinking mode"), UVM_LOW)
             set_dv_base_reg_field_by_name("pwm_param", "blink_en", Enable,  channel, channel, 1'b0);
             set_dv_base_reg_field_by_name("pwm_param", "htbt_en",  Disable, channel, channel, 1'b0);
-            // override the num_pulses for Blinking mode
-            pwm_regs.num_pulses = (pwm_regs.blink_param_x[channel] + 1) +
-                                  (pwm_regs.blink_param_y[channel] + 1);
           end
           Heartbeat: begin
-            `uvm_info(`gfn, $sformatf("\n  rxtx_vseq: Heartbeat mode"), UVM_LOW)
             // enable both blink_en and htbt_en in same cycle
             set_dv_base_reg_field_by_name("pwm_param", "blink_en", Enable, channel, channel, 1'b0);
             set_dv_base_reg_field_by_name("pwm_param", "htbt_en",  Enable, channel, channel, 1'b0);
             csr_update(base_reg);
-            // override the num_pulses for Blinking mode
-            pwm_regs.num_pulses *= (pwm_regs.blink_param_x[channel] + 1);
           end
-          default: begin // Standard mode
-            `uvm_info(`gfn, $sformatf("\n  rxtx_vseq: Standard mode"), UVM_LOW)
+          Standard: begin
             // disable both blink_en and htbt_en in same cycle
-            set_dv_base_reg_field_by_name("pwm_param", "htbt_en",  Disable, channel, channel, 1'b0);
             set_dv_base_reg_field_by_name("pwm_param", "blink_en", Disable, channel, channel, 1'b0);
+            set_dv_base_reg_field_by_name("pwm_param", "htbt_en",  Disable, channel, channel, 1'b0);
           end
         endcase
         // program phase delay
+        cfg.num_pulses = num_pulses;
         set_dv_base_reg_field_by_name("pwm_param", "phase_delay",
             pwm_regs.phase_delay[channel], channel, channel, 1'b0);
         // update pwm_param register
         csr_update(base_reg);
-        `uvm_info(`gfn, $sformatf("\n rxtx_vseq: update pwm_param[%0d]", channel), UVM_LOW)
+        `uvm_info(`gfn, $sformatf("\n  rxtx_vseq: update pwm_mode_regs[%0d]", channel), UVM_DEBUG)
       end
     end
-  endtask : program_channel_regs
+  endtask : program_pwm_mode_regs
 
 endclass : pwm_rx_tx_vseq

@@ -8,9 +8,8 @@ interface pwm_if #(
   import uvm_pkg::*;
 
   // core clock
-  logic clk_core;
-  logic rst_core_n;
+  logic clk;
+  logic rst_n;
   logic [NumPwmChannels-1:0] pwm;
-  logic [NumPwmChannels-1:0] pwm_en;
 
 endinterface : pwm_if

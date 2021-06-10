@@ -51,9 +51,8 @@ module tb;
     .cio_pwm_en_o  (cio_pwm_en)
   );
 
-  assign pwm_if.clk_core   = clk_core;
-  assign pwm_if.rst_core_n = rst_core_n;
-  assign pwm_if.pwm_en     = cio_pwm_en;
+  assign pwm_if.clk   = clk_core;
+  assign pwm_if.rst_n = rst_core_n;
   for (genvar i = 0; i < PWM_NUM_CHANNELS; i++) begin : gen_mux
     assign pwm_if.pwm[i] = (cio_pwm_en[i]) ? cio_pwm[i] : 1'b0;
   end
