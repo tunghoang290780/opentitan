@@ -60,7 +60,6 @@ class pwm_rx_tx_vseq extends pwm_base_vseq;
           end
         endcase
         // program phase delay
-        cfg.num_pulses = num_pulses;
         set_dv_base_reg_field_by_name("pwm_param", "phase_delay",
             pwm_regs.phase_delay[channel], channel, channel, 1'b0);
         // update pwm_param register

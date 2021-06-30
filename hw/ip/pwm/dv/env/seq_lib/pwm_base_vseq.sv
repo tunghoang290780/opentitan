@@ -17,6 +17,8 @@ class pwm_base_vseq extends cip_base_vseq #(
   rand pwm_regs_t pwm_regs;
   // number of generated pulses
   rand int num_pulses;
+  // delay time between two starts of channel
+  rand int dly_channel_idle;
 
   // constraints
   constraint num_trans_c {
@@ -28,13 +30,17 @@ class pwm_base_vseq extends cip_base_vseq #(
   constraint num_pulses_c {
     num_pulses inside {[cfg.seq_cfg.pwm_min_num_pulses : cfg.seq_cfg.pwm_max_num_pulses]};
   }
-
+  constraint dly_channel_idle_c {
+    dly_channel_idle inside {[cfg.seq_cfg.pwm_min_dly : cfg.seq_cfg.pwm_max_dly]};
+  }
   constraint pwm_regs_c {
     // constraints for single regs
     pwm_regs.dc_resn inside {[cfg.seq_cfg.pwm_min_dc_resn : cfg.seq_cfg.pwm_max_dc_resn]};
     pwm_regs.clk_div inside {[cfg.seq_cfg.pwm_min_clk_div : cfg.seq_cfg.pwm_max_clk_div]};
 
     // constraints for multi regs
+    foreach (pwm_regs.blink_en[i]) {pwm_regs.blink_en[i] == (pwm_regs.pwm_mode[i] != Standard);}
+    foreach (pwm_regs.htbt_en[i])  {pwm_regs.htbt_en[i]  == (pwm_regs.pwm_mode[i] == Heartbeat);}
     foreach (pwm_regs.pwm_mode[i]) {
       if (cfg.seq_cfg.pwm_run_mode == Allmodes) {
         pwm_regs.pwm_mode[i] dist { Standard  :/ 1, Blinking  :/ 1, Heartbeat :/ 0 };
@@ -42,9 +48,14 @@ class pwm_base_vseq extends cip_base_vseq #(
         pwm_regs.pwm_mode[i] == cfg.seq_cfg.pwm_run_mode;
       }
     }
-    foreach (pwm_regs.blink_en[i]) {pwm_regs.blink_en[i] == (pwm_regs.pwm_mode[i] != Standard);}
-    foreach (pwm_regs.htbt_en[i])  {pwm_regs.htbt_en[i]  == (pwm_regs.pwm_mode[i] == Heartbeat);}
-    pwm_regs.pwm_en inside {[1 : (1 << cfg.seq_cfg.pwm_run_channel) - 1]};
+    foreach (pwm_regs.pwm_en[i]) {
+      // only one channel is used for debug
+      if (i >= cfg.seq_cfg.pwm_run_channel_min && i <= cfg.seq_cfg.pwm_run_channel_max) {
+        pwm_regs.pwm_en[i] dist {1'b1 :/ 1, 1'b0 :/ 1};
+      } else {
+        pwm_regs.pwm_en[i] == 1'b0;
+      }
+    }
     foreach (pwm_regs.invert[i]) {
       if (pwm_regs.pwm_en[i]) {
         pwm_regs.invert[i] dist {1'b1 :/ 1, 1'b0 :/ 1};
@@ -88,12 +99,12 @@ class pwm_base_vseq extends cip_base_vseq #(
   endtask : initialize_pwm
 
   virtual task start_pwm_channels();
-    update_pwm_monitor_cfg();
     cfg.num_pulses = num_pulses;
-    program_pwm_enb_regs(Enable);
     program_pwm_inv_regs(Enable);
+    program_pwm_enb_regs(Enable);
     program_pwm_cnt_regs(Enable);
-    cfg.m_pwm_monitor_cfg.print_pwm_monitor_cfg(.en_print(1'b0));
+    update_pwm_monitor_cfg();
+    `uvm_info(`gfn, cfg.m_pwm_monitor_cfg.convert2string(), UVM_LOW)
     `uvm_info(`gfn, $sformatf("\n  base_vseq: start channels (%b)", pwm_regs.pwm_en), UVM_DEBUG)
   endtask : start_pwm_channels
 
@@ -110,7 +121,11 @@ class pwm_base_vseq extends cip_base_vseq #(
     // disable channels and clear phase counter
     program_pwm_cnt_regs(Disable);
     program_pwm_enb_regs(Disable);
+    update_pwm_monitor_cfg();
     program_pwm_inv_regs(Disable);
+    `uvm_info(`gfn, $sformatf("\n  base_vseq: cntr_en %b, pwm_en %b",
+        pwm_regs.cntr_en, pwm_regs.pwm_en), UVM_LOW)
+    cfg.clk_rst_vif.wait_clks(dly_channel_idle);
   endtask : run_pwm_channels
 
   // clear regen after initialization to allow programming registers
@@ -127,30 +142,23 @@ class pwm_base_vseq extends cip_base_vseq #(
     pwm_regs.pulse_cycle = 2**(pwm_regs.dc_resn + 1);
     ral.cfg.clk_div.set(pwm_regs.clk_div);
     ral.cfg.dc_resn.set(pwm_regs.dc_resn);
+    ral.cfg.cntr_en.set(1'b0);
     csr_update(ral.cfg);
   endtask : program_pwm_cfg_regs
 
   virtual task program_pwm_cnt_regs(pwm_status_e status = Enable);
-    pwm_regs.cntr_en = (status == Enable);
+    pwm_regs.cntr_en = status;
     ral.cfg.cntr_en.set(pwm_regs.cntr_en);
     csr_update(ral.cfg);
-    csr_spinwait(.ptr(ral.cfg.cntr_en), .exp_data(pwm_regs.cntr_en));
-    cfg.m_pwm_monitor_cfg.cntr_en = pwm_regs.cntr_en;
     `uvm_info(`gfn, $sformatf("\n  base_vseq: phase counters %s",
         pwm_regs.cntr_en ? "enable" : "clear"), UVM_DEBUG)
   endtask : program_pwm_cnt_regs
 
   virtual task program_pwm_enb_regs(pwm_status_e status = Enable);
-    if (status == Enable) begin
-      csr_wr(.ptr(ral.pwm_en), .value(pwm_regs.pwm_en));
-    end else begin
+    if (status == Disable) begin
       pwm_regs.pwm_en = '0;
-      csr_wr(.ptr(ral.pwm_en), .value(pwm_regs.pwm_en));
-      // wait one cycle before disable channels to let last pulses completed
-      cfg.clk_rst_vif.wait_clks(1);
     end
-    csr_spinwait(.ptr(ral.pwm_en), .exp_data(pwm_regs.pwm_en));
-    cfg.m_pwm_monitor_cfg.pwm_en = pwm_regs.pwm_en;
+    csr_wr(.ptr(ral.pwm_en), .value(pwm_regs.pwm_en));
     `uvm_info(`gfn, $sformatf("\n  base_vseq: %pwm_en %b", pwm_regs.pwm_en), UVM_DEBUG)
   endtask : program_pwm_enb_regs
 
@@ -159,7 +167,6 @@ class pwm_base_vseq extends cip_base_vseq #(
       pwm_regs.invert = '0;
     end
     csr_wr(.ptr(ral.invert), .value(pwm_regs.invert));
-    cfg.m_pwm_monitor_cfg.invert = pwm_regs.invert;
     `uvm_info(`gfn, $sformatf("\n  base_vseq: pwm_invert %b", pwm_regs.invert), UVM_DEBUG)
   endtask : program_pwm_inv_regs
 
@@ -197,8 +204,10 @@ class pwm_base_vseq extends cip_base_vseq #(
     cfg.m_pwm_monitor_cfg.pwm_mode      = pwm_regs.pwm_mode;
     cfg.m_pwm_monitor_cfg.phase_delay   = pwm_regs.phase_delay;
     cfg.m_pwm_monitor_cfg.pulse_cycle   = pwm_regs.pulse_cycle;
-    cfg.print_all_channel_cfg("base_vseq", pwm_regs, 1'b0);
-    cfg.print_channel_cfg("base_vseq", pwm_regs, 0, 1'b1);
+    cfg.m_pwm_monitor_cfg.cntr_en       = pwm_regs.cntr_en;
+    cfg.m_pwm_monitor_cfg.invert        = pwm_regs.invert;
+    cfg.m_pwm_monitor_cfg.pwm_en        = pwm_regs.pwm_en;
+    cfg.print_all_channel_cfg("base_vseq", pwm_regs);
   endfunction : update_pwm_monitor_cfg
 
   // override apply_reset to handle reset for bus and core domain
